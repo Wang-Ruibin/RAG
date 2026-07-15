@@ -7,6 +7,7 @@ import Chat from './pages/Chat';
 import Documents from './pages/Documents';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
+import UserManagement from './pages/UserManagement';
 import { getAuth } from './services/api';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -32,6 +33,7 @@ function App() {
             <Route path="documents" element={<Documents />} />
             <Route path="profile" element={<Profile />} />
             <Route path="admin" element={<Admin />} />
+            <Route path="users" element={<UserManagement />} />
             <Route path="" element={<Navigate to="/chat" replace />} />
           </Route>
         </Routes>

@@ -5,6 +5,7 @@ import {
   UserOutlined,
   LogoutOutlined,
   DashboardOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { clearAuth, getAuth } from '../services/api';
@@ -54,6 +55,11 @@ export default function AppLayout() {
       key: '/admin',
       icon: <DashboardOutlined />,
       label: '缓存管理',
+    });
+    menuItems.push({
+      key: '/users',
+      icon: <TeamOutlined />,
+      label: '人员管理',
     });
   }
 
@@ -107,6 +113,7 @@ export default function AppLayout() {
             {location.pathname === '/documents' && '知识库文档管理'}
             {location.pathname === '/profile' && '个人中心'}
             {location.pathname === '/admin' && '管理员 · 缓存管理'}
+            {location.pathname === '/users' && '管理员 · 人员管理'}
           </div>
           <Space>
             <Badge color={user?.role === 'admin' ? 'red' : 'blue'} text={user?.role === 'admin' ? '管理员' : '学生'} />

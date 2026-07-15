@@ -146,3 +146,53 @@ def get_user_list(
             "page_size": page_size,
         }
     )
+
+
+@router.put("/{target_user_id}/role")
+def admin_update_role(
+    target_user_id: int,
+    role: str,
+    user_id: int = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """管理员修改用户角色"""
+    current_user = UserService.get_by_id(db, user_id)
+    if not current_user or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="无权限访问")
+    if role not in ("student", "teacher", "admin"):
+        raise HTTPException(status_code=400, detail="无效的角色: 必须是 student/teacher/admin")
+    target = UserService.get_by_id(db, target_user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    target.role = role
+    db.commit()
+    db.refresh(target)
+    return _success(
+        data=UserResponse.model_validate(target).model_dump(),
+        message="角色已更新",
+    )
+
+
+@router.put("/{target_user_id}/status")
+def admin_update_status(
+    target_user_id: int,
+    status: int,
+    user_id: int = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """管理员启用/禁用用户"""
+    current_user = UserService.get_by_id(db, user_id)
+    if not current_user or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="无权限访问")
+    if status not in (0, 1):
+        raise HTTPException(status_code=400, detail="无效的状态: 0=禁用, 1=启用")
+    target = UserService.get_by_id(db, target_user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    target.status = status
+    db.commit()
+    db.refresh(target)
+    return _success(
+        data=UserResponse.model_validate(target).model_dump(),
+        message="启用" if status == 1 else "已禁用",
+    )

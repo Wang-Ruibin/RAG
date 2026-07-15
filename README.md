@@ -2,6 +2,39 @@
 
 基于 LLM + RAG / Agent + RAG 构建的河海大学校园知识问答系统。
 
+## 快速开始
+
+### 环境要求
+
+- Python 3.12+
+- MySQL 8.0+
+- Redis 7.0+
+
+### 安装
+
+```bash
+# 克隆仓库
+git clone https://github.com/Wang-Ruibin/RAG.git
+cd RAG
+
+# 创建虚拟环境
+python -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+
+# 安装依赖
+pip install -r requirements.txt
+```
+
+### 配置
+
+复制并编辑环境变量文件：
+
+```bash
+cp .env.example .env
+# 编辑 .env 填入 API Key、数据库连接等配置
+```
+
 ## knowledge_docs 目录说明
 
 知识文档库，存放用于 RAG 检索的河海大学相关知识文档。

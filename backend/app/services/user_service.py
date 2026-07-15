@@ -115,10 +115,21 @@ class UserService:
         page_size: int = 20,
         role: str | None = None,
         status: int | None = None,
+        keyword: str | None = None,
     ) -> tuple[list[User], int]:
         """获取用户列表（分页）"""
+        from sqlalchemy import or_
+
         query = db.query(User)
 
+        if keyword:
+            query = query.filter(
+                or_(
+                    User.username.like(f"%{keyword}%"),
+                    User.nickname.like(f"%{keyword}%"),
+                    User.email.like(f"%{keyword}%"),
+                )
+            )
         if role:
             query = query.filter(User.role == role)
         if status is not None:

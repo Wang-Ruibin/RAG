@@ -126,6 +126,7 @@ def get_user_list(
     page_size: int = 20,
     role: str | None = None,
     status: int | None = None,
+    keyword: str | None = None,
     user_id: int = Depends(_get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -136,7 +137,7 @@ def get_user_list(
         raise HTTPException(status_code=403, detail="无权限访问")
 
     users, total = UserService.get_user_list(
-        db, page=page, page_size=page_size, role=role, status=status
+        db, page=page, page_size=page_size, role=role, status=status, keyword=keyword
     )
     return _success(
         data={

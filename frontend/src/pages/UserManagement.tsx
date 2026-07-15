@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, Table, Tag, Select, Button, Modal, Form, Input, message, Popconfirm } from 'antd';
-import { UserOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { UserOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
 import api from '../services/api';
 
 export default function UserManagement() {
@@ -12,13 +12,21 @@ export default function UserManagement() {
   const [modalType, setModalType] = useState<'create' | 'edit'>('create');
   const [editingUser, setEditingUser] = useState<any>(null);
   const [form] = Form.useForm();
+  const [keyword, setKeyword] = useState('');
+  const [filterRole, setFilterRole] = useState<string | undefined>();
+  const [filterStatus, setFilterStatus] = useState<number | undefined>();
 
-  useEffect(() => { loadUsers(); }, [page]);
+  useEffect(() => { loadUsers(); }, [page, filterRole, filterStatus]);
+  useEffect(() => { setPage(1); loadUsers(); }, [keyword]);
 
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const r: any = await api.get(`/user/list?page=${page}&page_size=20`);
+      const params = new URLSearchParams({ page: String(page), page_size: '20' });
+      if (keyword) params.set('keyword', keyword);
+      if (filterRole) params.set('role', filterRole);
+      if (filterStatus !== undefined) params.set('status', String(filterStatus));
+      const r: any = await api.get(`/user/list?${params}`);
       if (r.code === 200) { setUsers(r.data.items || []); setTotal(r.data.total); }
     } catch (e) {} finally { setLoading(false); }
   };
@@ -39,6 +47,14 @@ export default function UserManagement() {
 
   return (
     <Card className="shadow-sm" title={<><UserOutlined className="mr-2" />人员管理</>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增用户</Button>}>
+      <div className="flex flex-wrap gap-3 mb-4">
+        <Input placeholder="搜索用户名/昵称/邮箱" value={keyword} onChange={(e) => setKeyword(e.target.value)} onPressEnter={loadUsers} prefix={<SearchOutlined />} style={{ width: 260 }} allowClear />
+        <Select placeholder="角色筛选" value={filterRole} onChange={(v) => setFilterRole(v)} allowClear style={{ width: 120 }}
+          options={[{ label: '学生', value: 'student' }, { label: '教师', value: 'teacher' }, { label: '管理员', value: 'admin' }]} />
+        <Select placeholder="状态筛选" value={filterStatus} onChange={(v) => setFilterStatus(v)} allowClear style={{ width: 120 }}
+          options={[{ label: '正常', value: 1 }, { label: '已禁用', value: 0 }]} />
+        <Button icon={<SearchOutlined />} onClick={loadUsers}>查询</Button>
+      </div>
       <Table rowKey="id" dataSource={users} loading={loading}
         pagination={{ current: page, total, pageSize: 20, onChange: (p) => setPage(p), showTotal: (t) => `共 ${t} 用户` }}
         columns={[

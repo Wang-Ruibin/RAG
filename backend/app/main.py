@@ -10,13 +10,14 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import init_db
-from app.routers import admin_router, document_router, qa_router, user_router
+from app.routers import admin_router, ai_router, document_router, qa_router, user_router
 from app.redis_client import redis_client as _  # Redis pre-init
 
 app = FastAPI(title="CampusQA", version="1.0.0", docs_url="/docs", redoc_url="/redoc")
 
 app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+app.include_router(ai_router)
 app.include_router(user_router)
 app.include_router(document_router)
 app.include_router(qa_router)

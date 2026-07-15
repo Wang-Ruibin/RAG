@@ -21,7 +21,7 @@ import {
   DislikeOutlined,
   RobotOutlined,
   UserOutlined,
-  FireOutlined,
+  FireOutlined, DownOutlined, PaperClipOutlined,
 } from '@ant-design/icons';
 import api from '../services/api';
 import { getAuth } from '../services/api';
@@ -34,6 +34,7 @@ interface Message {
   fromCache?: boolean;
   sources?: any[];
   feedback?: number;
+  isRAG?: boolean;
 }
 
 interface Session {
@@ -53,6 +54,8 @@ export default function Chat() {
   const [hotQuestions, setHotQuestions] = useState<{ question: string; count: number }[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user } = getAuth();
+  const [isRagMode, setIsRagMode] = useState(false);
+  const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set());
 
   const generateSessionId = () => 'session-' + Date.now();
 
@@ -128,45 +131,75 @@ export default function Chat() {
     setLoading(true);
 
     try {
-      const res: any = await api.post(`/qa/ask?question=${encodeURIComponent(question)}&session_id=${sessionId}`);
-      if (res.code === 200) {
-        if (res.data.from_cache) {
+      if (isRagMode) {
+        const res: any = await api.post(`/ai/query?question=${encodeURIComponent(question)}&session_id=${sessionId}`);
+        if (res.code === 200) {
           setMessages((prev) => [
             ...prev,
             {
               id: res.data.id || Date.now(),
               role: 'ai',
               content: res.data.answer,
-              fromCache: true,
+              sources: res.data.sources,
+              isRAG: true,
             },
           ]);
-        } else {
-          // Simulate AI answer for demo (in real scenario, would call RAG engine)
-          const answer = `关于"${question}"，我暂时没有找到匹配的校园资料。这是系统演示回复，实际接入 RAG 后会根据知识库生成回答。`;
-          await api.post('/qa/answer', {
-            record_id: res.data.id,
-            answer,
-            sources: [{ title: '校园知识库', url: '#' }],
-            tokens_used: 120,
-            duration_ms: 800,
-          });
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: res.data.id || Date.now(),
-              role: 'ai',
-              content: answer,
-              recordId: res.data.id,
-              sources: [{ title: '校园知识库', url: '#' }],
-            },
-          ]);
+          loadSessions();
+          loadHotQuestions();
         }
-        loadSessions();
-        loadHotQuestions();
+      } else {
+        const res: any = await api.post(`/qa/ask?question=${encodeURIComponent(question)}&session_id=${sessionId}`);
+        if (res.code === 200) {
+          if (res.data.from_cache) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: res.data.id || Date.now(),
+                role: 'ai',
+                content: res.data.answer,
+                fromCache: true,
+              },
+            ]);
+          } else {
+            // Simulate AI answer for demo (in real scenario, would call RAG engine)
+            const answer = `关于"${question}"，我暂时没有找到匹配的校园资料。这是系统演示回复，实际接入 RAG 后会根据知识库生成回答。`;
+            await api.post('/qa/answer', {
+              record_id: res.data.id,
+              answer,
+              sources: [{ title: '校园知识库', url: '#' }],
+              tokens_used: 120,
+              duration_ms: 800,
+            });
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: res.data.id || Date.now(),
+                role: 'ai',
+                content: answer,
+                recordId: res.data.id,
+                sources: [{ title: '校园知识库', url: '#' }],
+              },
+            ]);
+          }
+          loadSessions();
+          loadHotQuestions();
+        }
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleSources = (messageId: number) => {
+    setExpandedSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
   };
 
   const submitFeedback = async (recordId: number, feedback: number) => {
@@ -308,6 +341,9 @@ export default function Chat() {
                   <div>{m.content}</div>
                   {m.role === 'ai' && (
                     <div className="mt-2 flex items-center gap-2">
+                      {m.isRAG && (
+                        <Tag color="blue" className="text-xs">RAG</Tag>
+                      )}
                       {m.fromCache && (
                         <Tag color="green" className="text-xs">命中缓存</Tag>
                       )}
@@ -330,6 +366,47 @@ export default function Chat() {
                             />
                           </Tooltip>
                         </Space>
+                      )}
+                    </div>
+                  )}
+                  {m.sources && m.sources.length > 0 && (
+                    <div className="mt-3 border-t border-gray-100 pt-2">
+                      <div
+                        className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-500 hover:text-blue-600 transition-colors"
+                        onClick={() => toggleSources(m.id)}
+                      >
+                        <PaperClipOutlined className="text-gray-400" />
+                        <span>关于来源</span>
+                        <Tag className="text-xs ml-0.5" color="default">{m.sources.length}</Tag>
+                        <DownOutlined
+                          className={`text-[10px] text-gray-400 transition-transform duration-200 ${
+                            expandedSources.has(m.id) ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </div>
+                      {expandedSources.has(m.id) && (
+                        <div className="mt-2 space-y-2">
+                          {m.sources.map((src: any, i: number) => (
+                            <div key={i} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                              <div className="text-sm font-medium text-gray-800 truncate">{src.title}</div>
+                              <div className="text-xs text-gray-500 mt-1 line-clamp-2">
+                                {src.content_preview
+                                  ? src.content_preview.length > 100
+                                    ? src.content_preview.substring(0, 100) + '...'
+                                    : src.content_preview
+                                  : ''}
+                              </div>
+                              {src.score !== undefined && (
+                                <Tag
+                                  color={src.score > 0.7 ? 'success' : src.score > 0.5 ? 'warning' : 'default'}
+                                  className="mt-2 text-xs"
+                                >
+                                  {(src.score * 100).toFixed(1)}%
+                                </Tag>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   )}
@@ -364,6 +441,14 @@ export default function Chat() {
               }}
               className="flex-1"
             />
+            <Button
+              type={isRagMode ? 'primary' : 'default'}
+              icon={<PaperClipOutlined />}
+              onClick={() => setIsRagMode(!isRagMode)}
+              className={isRagMode ? 'bg-gradient-to-r from-green-500 to-teal-600 border-0 text-white' : ''}
+            >
+              {isRagMode ? 'RAG已开启' : 'RAG问答'}
+            </Button>
             <Button
               type="primary"
               icon={<SendOutlined />}

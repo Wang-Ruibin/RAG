@@ -21,3 +21,6 @@ redis==5.2.1
 
 # CORS
 # (已包含在 FastAPI 中)
+
+# HTTP client (for RAG ai_service integration)
+httpx==0.28.1

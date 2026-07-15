@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Tag, Select, message } from 'antd';
-import { UserOutlined } from '@ant-design/icons';
+import { Card, Table, Tag, Select, Button, Modal, Form, Input, message, Popconfirm } from 'antd';
+import { UserOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import api from '../services/api';
 
 export default function UserManagement() {
@@ -8,6 +8,10 @@ export default function UserManagement() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalType, setModalType] = useState<'create' | 'edit'>('create');
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [form] = Form.useForm();
 
   useEffect(() => { loadUsers(); }, [page]);
 
@@ -19,16 +23,22 @@ export default function UserManagement() {
     } catch (e) {} finally { setLoading(false); }
   };
 
-  const updateRole = async (id: number, role: string) => {
-    try { await api.put(`/user/${id}/role?role=${role}`); message.success('角色已更新'); loadUsers(); } catch (e) {}
+  const openCreate = () => { setModalType('create'); setEditingUser(null); form.resetFields(); setModalOpen(true); };
+  const openEdit = (u: any) => { setModalType('edit'); setEditingUser(u); form.setFieldsValue({ nickname: u.nickname, email: u.email }); setModalOpen(true); };
+  const handleSubmit = async () => {
+    try {
+      const values = form.getFieldsValue();
+      if (modalType === 'create') { await api.post('/user/register', { ...values, password: '123456' }); message.success('创建成功，默认密码 123456'); }
+      else { await api.put(`/user/${editingUser.id}`, values); message.success('已更新'); }
+      setModalOpen(false); loadUsers();
+    } catch (e) {}
   };
-
-  const toggleStatus = async (id: number, status: number) => {
-    try { await api.put(`/user/${id}/status?status=${status}`); message.success(status === 1 ? '已启用' : '已禁用'); loadUsers(); } catch (e) {}
-  };
+  const updateRole = async (id: number, role: string) => { try { await api.put(`/user/${id}/role?role=${role}`); loadUsers(); } catch (e) {} };
+  const toggleStatus = async (id: number, s: number) => { try { await api.put(`/user/${id}/status?status=${s}`); message.success(s === 1 ? '已启用' : '已禁用'); loadUsers(); } catch (e) {} };
+  const deleteUser = async (id: number) => { try { await api.delete(`/user/${id}`); message.success('已删除'); loadUsers(); } catch (e) {} };
 
   return (
-    <Card className="shadow-sm" title={<><UserOutlined className="mr-2" />人员管理</>}>
+    <Card className="shadow-sm" title={<><UserOutlined className="mr-2" />人员管理</>} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增用户</Button>}>
       <Table rowKey="id" dataSource={users} loading={loading}
         pagination={{ current: page, total, pageSize: 20, onChange: (p) => setPage(p), showTotal: (t) => `共 ${t} 用户` }}
         columns={[
@@ -41,13 +51,29 @@ export default function UserManagement() {
               options={[{ label: '学生', value: 'student' }, { label: '教师', value: 'teacher' }, { label: '管理员', value: 'admin' }]} />
           )},
           { title: '状态', dataIndex: 'status', width: 100, render: (s: number, r: any) => (
-            s === 1
-              ? <Tag color="success" style={{ cursor: 'pointer' }} onClick={() => toggleStatus(r.id, 0)}>正常</Tag>
-              : <Tag color="error" style={{ cursor: 'pointer' }} onClick={() => toggleStatus(r.id, 1)}>已禁用</Tag>
+            s === 1 ? <Tag color="success" style={{ cursor: 'pointer' }} onClick={() => toggleStatus(r.id, 0)}>正常</Tag>
+                    : <Tag color="error" style={{ cursor: 'pointer' }} onClick={() => toggleStatus(r.id, 1)}>已禁用</Tag>
           )},
-          { title: '注册时间', dataIndex: 'created_at', width: 170, render: (d: string) => new Date(d).toLocaleString() },
-        ]}
-      />
+          { title: '注册时间', dataIndex: 'created_at', width: 160, render: (d: string) => new Date(d).toLocaleString() },
+          { title: '操作', width: 140, render: (_: any, r: any) => (
+            <div className="flex gap-1">
+              <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
+              <Popconfirm title="确认删除？" onConfirm={() => deleteUser(r.id)} okText="删除" cancelText="取消">
+                <Button type="link" danger size="small" icon={<DeleteOutlined />}>删除</Button>
+              </Popconfirm>
+            </div>
+          )},
+        ]} />
+      <Modal title={modalType === 'create' ? '新增用户' : '编辑用户'} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={handleSubmit}
+        okText={modalType === 'create' ? '创建' : '保存'}>
+        <Form form={form} layout="vertical">
+          {modalType === 'create' && <Form.Item label="用户名" name="username" rules={[{ required: true, message: '必填' }]}><Input placeholder="用户名" /></Form.Item>}
+          <Form.Item label="昵称" name="nickname"><Input placeholder="昵称" /></Form.Item>
+          <Form.Item label="邮箱" name="email"><Input placeholder="邮箱" /></Form.Item>
+          {modalType === 'create' && <Form.Item label="角色" name="role" initialValue="student"><Select options={[{ label: '学生', value: 'student' }, { label: '教师', value: 'teacher' }, { label: '管理员', value: 'admin' }]} /></Form.Item>}
+          {modalType === 'create' && <div className="text-xs text-gray-400">默认密码: 123456</div>}
+        </Form>
+      </Modal>
     </Card>
   );
 }

@@ -3,37 +3,39 @@
 import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import init_db
 from app.routers import admin_router, document_router, qa_router, user_router
-from app.redis_client import redis_client as _  # 触发 Redis 预初始化
+from app.redis_client import redis_client as _  # Redis pre-init
 
-app = FastAPI(
-    title="CampusQA - 河海大学校园知识问答助手",
-    description="基于 FastAPI + RAG 的校园知识问答系统后端 API",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
+app = FastAPI(title="CampusQA", version="1.0.0", docs_url="/docs", redoc_url="/redoc")
 
-# CORS 中间件
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=settings.CORS_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# 注册路由
 app.include_router(user_router)
 app.include_router(document_router)
 app.include_router(qa_router)
 app.include_router(admin_router)
+
+# ---- Frontend static files (build first: cd frontend && npm run build) ----
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if FRONTEND_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="frontend_assets")
+    # SPA fallback: serve index.html for all non-API routes
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str, request: Request):
+        # Skip API routes (they should have matched above routers)
+        if full_path.startswith("api/") or full_path.startswith("admin/cache") or full_path.startswith("docs") or full_path.startswith("redoc"):
+            return HTMLResponse(status_code=404)
+        fp = FRONTEND_DIR / full_path
+        if fp.exists() and fp.is_file():
+            return FileResponse(fp)
+        return FileResponse(FRONTEND_DIR / "index.html")
 
 
 _admin_html = Path(__file__).resolve().parent / "static" / "admin.html"

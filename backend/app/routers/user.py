@@ -196,3 +196,43 @@ def admin_update_status(
         data=UserResponse.model_validate(target).model_dump(),
         message="启用" if status == 1 else "已禁用",
     )
+
+
+@router.put("/{target_user_id}")
+def admin_update_user(
+    target_user_id: int,
+    data: UserUpdate,
+    user_id: int = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """管理员修改用户全部信息"""
+    current_user = UserService.get_by_id(db, user_id)
+    if not current_user or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="无权限访问")
+    target = UserService.update_profile(db, target_user_id, data)
+    if not target:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return _success(
+        data=UserResponse.model_validate(target).model_dump(),
+        message="用户信息已更新",
+    )
+
+
+@router.delete("/{target_user_id}")
+def admin_delete_user(
+    target_user_id: int,
+    user_id: int = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """管理员删除用户（软删除：设置status=0）"""
+    current_user = UserService.get_by_id(db, user_id)
+    if not current_user or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="无权限访问")
+    if target_user_id == user_id:
+        raise HTTPException(status_code=400, detail="不能删除自己")
+    target = UserService.get_by_id(db, target_user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    target.status = 0
+    db.commit()
+    return _success(message="用户已删除")

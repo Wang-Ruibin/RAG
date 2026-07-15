@@ -54,7 +54,7 @@ export default function Chat() {
   const [hotQuestions, setHotQuestions] = useState<{ question: string; count: number }[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user } = getAuth();
-  const [isRagMode, setIsRagMode] = useState(false);
+  const [isRagMode, setIsRagMode] = useState(true); // RAG 模式默认开启
   const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set());
 
   const generateSessionId = () => 'session-' + Date.now();
@@ -132,14 +132,14 @@ export default function Chat() {
 
     try {
       if (isRagMode) {
-        const res: any = await api.post(`/ai/query?question=${encodeURIComponent(question)}&session_id=${sessionId}`);
+        const res: any = await api.post('/ai/query', { question, top_k: 5 });
         if (res.code === 200) {
           setMessages((prev) => [
             ...prev,
             {
-              id: res.data.id || Date.now(),
+              id: Date.now(),
               role: 'ai',
-              content: res.data.answer,
+              content: res.data.answer || "未获取到回答",
               sources: res.data.sources,
               isRAG: true,
             },

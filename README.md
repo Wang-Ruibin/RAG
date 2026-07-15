@@ -153,22 +153,37 @@ backend/
 └── .env
 ```
 
+### 前端（React 18 + TypeScript + Vite）
+
+| 页面 | 路径 | 功能 |
+|------|------|------|
+| 登录/注册 | `/login` | JWT 认证 |
+| 智能问答 | `/chat` | 会话管理、热门问题、反馈 |
+| 知识库文档 | `/documents` | 文档列表、新增、删除 |
+| 个人中心 | `/profile` | 资料修改 |
+| 缓存管理 | `/admin` | 管理员实时缓存面板 |
+
 ### 本地启动
 
+**1. 启动后端**
 ```bash
-# 1. 安装依赖
 cd backend
 pip install -r requirements.txt
-
-# 2. 初始化数据库（MySQL 需已启动）
 mysql -u root -p < init_db.sql
-
-# 3. 启动服务
 python -m uvicorn app.main:app --reload --port 8002
-
-# 4. 访问 Swagger 文档
-# http://localhost:8002/docs
 ```
+
+**2. 启动前端**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**3. 访问**
+- 前端：`http://localhost:5173`
+- 后端 Swagger：`http://localhost:8002/docs`
+- 后端缓存面板：`http://localhost:8002/admin/cache`
 
 ### 验证结果 (2026-07-15)
 

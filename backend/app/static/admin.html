@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CampusQA · 缓存管理</title>
+<style>
+  /* ─── Reset ─── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 14px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f0f2f5; color: #1a1a2e; min-height: 100vh; display: flex;
+  }
+  a { color: #4361ee; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ─── Sidebar ─── */
+  .sidebar {
+    width: 240px; min-height: 100vh;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+    color: #a0aec0; display: flex; flex-direction: column; flex-shrink: 0;
+    position: sticky; top: 0; height: 100vh;
+  }
+  .sidebar-header {
+    padding: 24px 20px 20px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .sidebar-header h1 { font-size: 1.15rem; color: #e2e8f0; font-weight: 700; }
+  .sidebar-header p { font-size: .75rem; color: #718096; margin-top: 4px; }
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px; cursor: pointer; transition: all .15s;
+    font-size: .875rem; color: #a0aec0; border-left: 3px solid transparent;
+  }
+  .nav-item:hover, .nav-item.active {
+    background: rgba(67,97,238,.12); color: #e2e8f0;
+    border-left-color: #4361ee;
+  }
+  .nav-item .icon { width: 18px; text-align: center; font-size: 1rem; }
+  .sidebar-footer {
+    padding: 16px 20px; border-top: 1px solid rgba(255,255,255,.06);
+    font-size: .75rem; color: #4a5568;
+  }
+
+  /* ─── Main content ─── */
+  .main {
+    flex: 1; padding: 28px 32px; max-width: 1200px;
+  }
+  .page-header { margin-bottom: 24px; }
+  .page-header h2 { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+  .page-header p { font-size: .875rem; color: #718096; margin-top: 4px; }
+
+  /* ─── Cards grid ─── */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .card {
+    background: #fff; border-radius: 12px; padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    transition: box-shadow .2s, transform .15s;
+  }
+  .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.1); transform: translateY(-1px); }
+  .card-label { font-size: .8rem; color: #718096; margin-bottom: 6px; }
+  .card-value { font-size: 1.75rem; font-weight: 700; color: #1a1a2e; }
+  .card-sub { font-size: .75rem; color: #a0aec0; margin-top: 4px; }
+  .card-icon { float: right; font-size: 1.5rem; opacity: .35; }
+
+  /* ─── Section ─── */
+  .section {
+    background: #fff; border-radius: 12px; padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 20px;
+  }
+  .section-title {
+    font-size: 1rem; font-weight: 600; color: #1a1a2e;
+    margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+  }
+  .section-title .badge {
+    font-size: .7rem; font-weight: 500;
+    background: #e2e8f0; color: #4a5568;
+    padding: 2px 8px; border-radius: 10px; margin-left: auto;
+  }
+
+  /* ─── Pie + Legend ─── */
+  .chart-row { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+  .pie {
+    width: 130px; height: 130px; border-radius: 50%; flex-shrink: 0;
+  }
+  .legend { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 180px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .legend-count { margin-left: auto; font-weight: 600; color: #1a1a2e; }
+
+  /* ─── Buttons ─── */
+  .btn-group { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 18px; border: none; border-radius: 8px;
+    font-size: .85rem; font-weight: 500; cursor: pointer;
+    transition: all .15s; white-space: nowrap;
+  }
+  .btn:active { transform: scale(.96); }
+  .btn-danger { background: #e53e3e; color: #fff; }
+  .btn-danger:hover { background: #c53030; }
+  .btn-warning { background: #dd6b20; color: #fff; }
+  .btn-warning:hover { background: #c05621; }
+  .btn-primary { background: #4361ee; color: #fff; }
+  .btn-primary:hover { background: #3a56d4; }
+  .btn-secondary { background: #e2e8f0; color: #4a5568; }
+  .btn-secondary:hover { background: #cbd5e0; }
+  .btn-success { background: #38a169; color: #fff; }
+  .btn-success:hover { background: #2f855a; }
+  .btn-sm { padding: 6px 14px; font-size: .8rem; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .btn-outline { background: transparent; color: #4361ee; border: 1.5px solid #4361ee; }
+  .btn-outline:hover { background: rgba(67,97,238,.08); }
+  .btn-outline.active { background: #4361ee; color: #fff; }
+
+  /* ─── Warmup ─── */
+  .warmup-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .warmup-row input {
+    width: 80px; padding: 8px 12px; border: 1px solid #e2e8f0;
+    border-radius: 8px; font-size: .875rem; outline: none;
+    transition: border-color .15s;
+  }
+  .warmup-row input:focus { border-color: #4361ee; }
+
+  /* ─── Table ─── */
+  .table-wrap { overflow-x: auto; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #edf2f7; }
+  th { font-weight: 600; color: #4a5568; background: #f7fafc; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+  td { color: #2d3748; }
+  tr:hover td { background: #f7fafc; }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: .75rem; font-weight: 500;
+  }
+  .tag-string { background: #ebf4ff; color: #2b6cb0; }
+  .tag-zset { background: #fefcbf; color: #975a16; }
+  .tag-list { background: #e6fffa; color: #276749; }
+  .tag-other { background: #edf2f7; color: #4a5568; }
+
+  /* ─── Toast ─── */
+  .toast-container { position: fixed; top: 20px; right: 20px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    padding: 12px 20px; border-radius: 8px; color: #fff; font-size: .875rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    animation: slideIn .25s ease-out;
+    max-width: 380px;
+  }
+  .toast-success { background: #38a169; }
+  .toast-error { background: #e53e3e; }
+  .toast-info { background: #4361ee; }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* ─── Loading overlay ─── */
+  .loading { display: none; align-items: center; justify-content: center; gap: 8px; padding: 40px; color: #718096; }
+  .spinner { width: 24px; height: 24px; border: 3px solid #e2e8f0; border-top-color: #4361ee; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Status dot ─── */
+  .status-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+  }
+  .status-dot.green { background: #38a169; }
+  .status-dot.yellow { background: #dd6b20; }
+  .status-dot.red { background: #e53e3e; }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 768px) {
+    .sidebar { width: 60px; }
+    .sidebar-header h1, .sidebar-header p, .nav-item span, .sidebar-footer { display: none; }
+    .sidebar-header { padding: 16px 12px; }
+    .nav-item { justify-content: center; padding: 12px; }
+    .main { padding: 20px 16px; }
+    .cards { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 480px) {
+    .cards { grid-template-columns: 1fr; }
+  }
+
+  /* ─── Empty state ─── */
+  .empty { text-align: center; padding: 32px; color: #a0aec0; font-size: .875rem; }
+</style>
+</head>
+<body>
+
+<!-- ─── Sidebar ─── -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h1>CampusQA</h1>
+    <p>缓存管理面板</p>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-item active">
+      <span class="icon">&#9632;</span>
+      <span>缓存概览</span>
+    </div>
+    <div class="nav-item" onclick="document.querySelector('.keylist-section').scrollIntoView({behavior:'smooth'})">
+      <span class="icon">&#9776;</span>
+      <span>缓存 Keys</span>
+    </div>
+    <div class="nav-item" onclick="document.querySelector('.ops-section').scrollIntoView({behavior:'smooth'})">
+      <span class="icon">&#9881;</span>
+      <span>管理操作</span>
+    </div>
+    <div class="nav-item" onclick="document.querySelector('.warmup-section').scrollIntoView({behavior:'smooth'})">
+      <span class="icon">&#9729;</span>
+      <span>缓存预热</span>
+    </div>
+  </nav>
+  <div class="sidebar-footer">v1.0.0 &middot; FastAPI</div>
+</aside>
+
+<!-- ─── Main ─── -->
+<main class="main">
+  <div class="page-header">
+    <h2>&#9632; 缓存管理</h2>
+    <p>查看和管理 CampusQA Redis 缓存</p>
+  </div>
+
+  <!-- Stats Cards -->
+  <div class="cards" id="statsCards">
+    <div class="card"><div class="card-label">&#128190; 总缓存 Keys</div><div class="card-value" id="statTotalKeys">-</div><div class="card-sub" id="statTotalSub">&#160;</div></div>
+    <div class="card"><div class="card-label">&#128203; Q&amp;A 缓存</div><div class="card-value" id="statQaKeys">-</div><div class="card-sub">问答结果缓存</div></div>
+    <div class="card"><div class="card-label">&#128172; 会话缓存</div><div class="card-value" id="statSessionKeys">-</div><div class="card-sub">用户会话记录</div></div>
+    <div class="card"><div class="card-label">&#128200; 内存占用</div><div class="card-value" id="statMemory">-</div><div class="card-sub" id="statMemSub">&#160;</div></div>
+  </div>
+
+  <!-- Chart Section -->
+  <div class="section">
+    <div class="section-title">&#128202; 缓存分布</div>
+    <div class="chart-row">
+      <div class="pie" id="pieChart"></div>
+      <div class="legend" id="legendContainer"></div>
+    </div>
+  </div>
+
+  <!-- Key List Section -->
+  <div class="section keylist-section">
+    <div class="section-title">
+      &#128196; 缓存 Keys
+      <span class="badge" id="keyCountBadge">0</span>
+    </div>
+    <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="keyPattern" value="campus:qa:*" placeholder="匹配模式"
+             style="padding:7px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem;outline:none;width:200px;"
+             onkeydown="if(event.key==='Enter') loadKeys()">
+      <button class="btn btn-secondary btn-sm" onclick="loadKeys()">&#128269; 查询</button>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('keyPattern').value='campus:qa:*';loadKeys()">重置</button>
+      <span style="font-size:.78rem;color:#a0aec0;margin-left:auto;" id="keyListStatus">&#160;</span>
+    </div>
+    <div class="table-wrap" id="keyTableWrap">
+      <div class="empty" id="keyEmpty">输入模式后点击查询</div>
+    </div>
+  </div>
+
+  <!-- Operations Section -->
+  <div class="section ops-section">
+    <div class="section-title">&#9881; 管理操作</div>
+    <div class="btn-group">
+      <button class="btn btn-danger" onclick="clearCache('all')">&#128465; 清空全部</button>
+      <button class="btn btn-warning" onclick="clearCache('qa')">&#128465; 清空 Q&amp;A</button>
+      <button class="btn btn-warning" onclick="clearCache('sessions')">&#128465; 清空会话</button>
+      <button class="btn btn-secondary" onclick="clearCache('hot')">&#128260; 重置热门</button>
+      <button class="btn btn-primary" onclick="refreshAll()">&#8635; 刷新数据</button>
+      <button id="autoRefreshBtn" class="btn btn-outline active" onclick="toggleAutoRefresh()">⏸ 停止自动刷新</button>
+    </div>
+  </div>
+
+  <!-- Warmup Section -->
+  <div class="section warmup-section">
+    <div class="section-title">&#9729; 缓存预热</div>
+    <div class="warmup-row">
+      <span style="font-size:.85rem;color:#4a5568;">预热热门问题数量：</span>
+      <input id="warmupLimit" type="number" value="10" min="1" max="100">
+      <button class="btn btn-success" onclick="warmupCache()">&#9654; 开始预热</button>
+      <span style="font-size:.8rem;color:#718096;" id="warmupResult">&#160;</span>
+    </div>
+  </div>
+</main>
+
+<!-- ─── Toast ─── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ─── Helpers ───
+const BASE = '/api/admin';
+let token = '';
+let statsCache = null;
+
+function getToken() {
+  if (token) return token;
+  const t = localStorage.getItem('admin_token');
+  if (t) { token = t; return t; }
+  const input = prompt('请输入管理员 Bearer Token：');
+  if (input) { token = input; localStorage.setItem('admin_token', input); return input; }
+  return '';
+}
+
+function clearToken() { token = ''; localStorage.removeItem('admin_token'); }
+
+function headers() {
+  const t = getToken();
+  return t ? { 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+}
+
+function toast(msg, type='success') {
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+async function api(method, path, body=null) {
+  const opts = { method, headers: headers() };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(BASE + path, opts);
+  if (resp.status === 401 || resp.status === 403) {
+    const err = await resp.json().catch(() => ({}));
+    if (resp.status === 401) { clearToken(); toast('Token 无效，请重新登录', 'error'); }
+    else toast(err.detail || '权限不足', 'error');
+    return null;
+  }
+  const data = await resp.json();
+  if (data.code !== 200) { toast(data.message || '请求失败', 'error'); return null; }
+  return data.data;
+}
+
+// ─── Render charts ───
+const COLORS = ['#4361ee', '#38a169', '#dd6b20', '#718096'];
+
+function renderChart(stats) {
+  const byPrefix = stats.keys_by_prefix || {};
+  const entries = Object.entries(byPrefix);
+  const total = entries.reduce((s, [,v]) => s + v.count, 0);
+
+  // Pie
+  const pie = document.getElementById('pieChart');
+  if (total === 0) {
+    pie.style.background = '#e2e8f0';
+    return;
+  }
+  let conic = '';
+  let angle = 0;
+  const parts = entries.map(([,v], i) => {
+    const pct = v.count / total;
+    const start = angle;
+    const end = angle + pct * 360;
+    angle = end;
+    return { label: v.pattern, count: v.count, pct, color: COLORS[i % COLORS.length], start, end };
+  });
+  conic = parts.map(p => p.color + ' ' + p.start + 'deg ' + p.end + 'deg').join(', ');
+  pie.style.background = 'conic-gradient(' + conic + ')';
+
+  // Legend
+  const leg = document.getElementById('legendContainer');
+  leg.innerHTML = parts.map((p, i) =>
+    '<div class="legend-item">' +
+      '<span class="legend-dot" style="background:' + p.color + '"></span>' +
+      '<span>' + p.label.split(':').slice(1).join(':') + '</span>' +
+      '<span class="legend-count">' + p.count + '</span>' +
+    '</div>'
+  ).join('');
+}
+
+// ─── Load stats ───
+async function loadStats() {
+  const data = await api('GET', '/cache/stats');
+  if (!data) return;
+  statsCache = data;
+
+  const byPrefix = data.keys_by_prefix || {};
+  const qa = byPrefix['Q&A 缓存']?.count || 0;
+  const sess = byPrefix['会话缓存']?.count || 0;
+  const hot = byPrefix['热门问题']?.count || 0;
+  const other = byPrefix['其他']?.count || 0;
+
+  document.getElementById('statTotalKeys').textContent = data.total_keys ?? '-';
+  document.getElementById('statTotalSub').textContent = '命中率: ' + (data.hit_ratio !== 'N/A' ? data.hit_ratio + '%' : 'N/A');
+  document.getElementById('statQaKeys').textContent = qa;
+  document.getElementById('statSessionKeys').textContent = sess;
+  document.getElementById('statMemory').textContent = data.memory_human !== 'N/A' ? data.memory_human : '-';
+  document.getElementById('statMemSub').textContent = '类型: ' + (data.server_type === 'real' ? '真实 Redis' : 'fakeredis 仿真');
+
+  renderChart(data);
+}
+
+// ─── Load keys ───
+async function loadKeys() {
+  const pattern = document.getElementById('keyPattern').value || 'campus:qa:*';
+  const wrap = document.getElementById('keyTableWrap');
+  const status = document.getElementById('keyListStatus');
+  const badge = document.getElementById('keyCountBadge');
+  status.textContent = '加载中...';
+
+  const data = await api('GET', '/cache/keys?pattern=' + encodeURIComponent(pattern));
+  if (!data) { status.textContent = '加载失败'; return; }
+
+  const keys = data.keys || [];
+  badge.textContent = data.total;
+
+  if (keys.length === 0) {
+    wrap.innerHTML = '<div class="empty">&#128373; 没有匹配的缓存 key</div>';
+    status.textContent = '共 0 个 key';
+    return;
+  }
+
+  let html = '<table><thead><tr><th>Key</th><th style="width:80px">类型</th><th style="width:80px">TTL (s)</th></tr></thead><tbody>';
+  keys.forEach(k => {
+    const tagCls = 'tag-' + ({string:'string', zset:'zset', list:'list', hash:'hash'}[k.type] || 'other');
+    const typeLabel = {string:'string', zset:'zset', list:'list', hash:'hash'}[k.type] || k.type;
+    html += '<tr><td style="word-break:break-all;font-family:monospace;font-size:.8rem;">' + k.key + '</td>' +
+            '<td><span class="tag ' + tagCls + '">' + typeLabel + '</span></td>' +
+            '<td>' + (k.ttl >= 0 ? k.ttl : '-') + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  status.textContent = '共 ' + keys.length + ' 个 key';
+}
+
+// ─── Clear cache ───
+async function clearCache(type) {
+  const msgs = { all: '清空全部缓存?', qa: '清空 Q&A 缓存?', sessions: '清空会话缓存?', hot: '重置热门问题?' };
+  if (!confirm(msgs[type] || '确认操作?')) return;
+
+  let path;
+  switch(type) {
+    case 'all': path = '/cache/clear'; break;
+    case 'qa': path = '/cache/clear/qa'; break;
+    case 'sessions': path = '/cache/clear/sessions'; break;
+    case 'hot': path = '/cache/clear/hot'; break;
+    default: return;
+  }
+
+  const data = await api('DELETE', path);
+  if (data) {
+    toast('已删除 ' + (data.deleted || 0) + ' 个 key');
+    refreshAll();
+  }
+}
+
+// ─── Warmup ───
+async function warmupCache() {
+  const limit = parseInt(document.getElementById('warmupLimit').value) || 10;
+  document.getElementById('warmupResult').textContent = '预热中...';
+  const data = await api('POST', '/cache/warmup?limit=' + limit);
+  if (data) {
+    document.getElementById('warmupResult').textContent = '已预热 ' + (data.warmed || 0) + ' / ' + (data.total_hot || 0) + ' 个热点';
+    toast('预热完成: ' + data.warmed + ' 个');
+    refreshAll();
+  } else {
+    document.getElementById('warmupResult').textContent = '预热失败';
+  }
+}
+
+// ─── Refresh ───
+async function refreshAll() {
+  await loadStats();
+  await loadKeys();
+}
+
+// ─── Auto-refresh ───
+let autoRefreshTimer = null;
+let autoRefreshOn = true;
+
+function toggleAutoRefresh() {
+  autoRefreshOn = !autoRefreshOn;
+  const btn = document.getElementById('autoRefreshBtn');
+  if (autoRefreshOn) {
+    autoRefreshTimer = setInterval(refreshAll, 5000);
+    btn.textContent = '⏸ 停止自动刷新';
+    btn.className = 'btn btn-outline active';
+  } else {
+    clearInterval(autoRefreshTimer);
+    btn.textContent = '▶ 开始自动刷新';
+    btn.className = 'btn btn-outline';
+  }
+}
+
+// ─── Init ───
+document.addEventListener('DOMContentLoaded', () => {
+  refreshAll();
+  autoRefreshTimer = setInterval(refreshAll, 5000);
+});
+</script>
+</body>
+</html>

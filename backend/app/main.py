@@ -1,13 +1,15 @@
 """FastAPI 应用入口"""
 
 import time
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from app.config import settings
 from app.database import init_db
-from app.routers import document_router, qa_router, user_router
+from app.routers import admin_router, document_router, qa_router, user_router
 from app.redis_client import redis_client as _  # 触发 Redis 预初始化
 
 app = FastAPI(
@@ -31,6 +33,18 @@ app.add_middleware(
 app.include_router(user_router)
 app.include_router(document_router)
 app.include_router(qa_router)
+app.include_router(admin_router)
+
+
+_admin_html = Path(__file__).resolve().parent / "static" / "admin.html"
+
+
+@app.get("/admin/cache", response_class=HTMLResponse, include_in_schema=False)
+def admin_cache_page():
+    """管理后台缓存面板"""
+    if _admin_html.exists():
+        return HTMLResponse(content=_admin_html.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Dashboard not found</h1>", status_code=404)
 
 
 @app.on_event("startup")

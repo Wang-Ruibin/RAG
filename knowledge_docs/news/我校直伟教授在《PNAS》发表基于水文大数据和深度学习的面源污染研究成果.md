@@ -27,11 +27,3 @@
 https://www.pnas.org/doi/10.1073/pnas.2402028121
 
 相关成果：
-
-1.Zhi, W., Klingler, C., Liu J., & Li, L. (2023). Widespread deoxygenation in warming rivers. Nature Climate Change, 13(10), 1105-1113. https://doi.org/10.1038/s41558-023-01793-3
-
-2.Zhi, W., Appling, A.P., Golden, H.E., Podgorski, J., & Li, L. (2024). Deep learning for water quality. Nature Water, 2, 228–241. https://doi.org/10.1038/s44221-024-00202-z
-
-3.Zhi, W., Ouyang, W., Shen, C., & Li, L. (2023). Temperature outweighs light and flow as the predominant driver of dissolved oxygen in US rivers. Nature Water, 1(3), 249-260. https://doi.org/10.1038/s44221-023-00038-z
-
-上一篇：下一篇：

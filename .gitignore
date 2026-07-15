@@ -43,7 +43,7 @@ CLAUDE.md
 *.bin
 *.gguf
 *.safetensors
-models/
+/models/
 ollama_data/
 
 # ChromaDB 数据

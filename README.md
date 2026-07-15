@@ -107,6 +107,33 @@ campus:qa:hot:questions                 → 热门排行（ZSet）
 
 Redis 不可用时自动降级到 **fakeredis**（内存模拟），零代码改动。
 
+### 管理员缓存控制台
+
+> `GET /admin/cache` · 需 admin 角色
+
+可视化缓存管理面板，**每 5 秒自动轮询 Redis**，实时反映缓存状态。
+
+| 功能 | 说明 |
+|------|------|
+| 📊 统计卡片 | 总 Keys、Q&A 缓存、会话缓存、内存占用 · 命中率 |
+| 🥧 饼图 | CSS conic-gradient 展示缓存类别分布 |
+| 📋 Key 列表 | 按前缀搜索、显示类型和 TTL |
+| 🧹 一键清空 | 全部 / 仅 Q&A / 仅会话 / 重置热门 |
+| 🔥 缓存预热 | 批量加载热点问题到 Redis |
+| 🔄 自动刷新 | 5s 间隔轮询，有人提问面板立即可见 |
+
+**管理员 API** `/api/admin/*`（均需 admin JWT）：
+
+| 方法 | 端点 | 功能 |
+|------|------|------|
+| GET | `/cache/stats` | 缓存统计（Keys、内存、命中率、Redis 版本） |
+| GET | `/cache/keys` | Key 列表（支持 pattern 筛选） |
+| DELETE | `/cache/clear` | 清空全部缓存 |
+| DELETE | `/cache/clear/qa` | 清空 Q&A 缓存 |
+| DELETE | `/cache/clear/sessions` | 清空会话缓存 |
+| DELETE | `/cache/clear/hot` | 重置热门问题 |
+| POST | `/cache/warmup` | 缓存预热 |
+
 ### 项目结构
 
 ```

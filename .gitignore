@@ -1,72 +1,79 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-dist/
-build/
-*.egg
+# Python environments, bytecode, packages, and tool caches
 .venv/
 venv/
 env/
-*.egg-info
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
-# IDE
+# Node/Vite build state
+node_modules/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+.vite/
+
+# Secrets and machine-local environment files
+*.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+*.key
+*.pem
+config/secrets.*
+config/api_keys.*
+config/*.local.*
+backend/config/*.local.*
+ai-config.local.*
+
+# Local AI assistant configuration and state
+AGENTS.md
+CLAUDE.md
+.claude/
+.codex/
+.agents/
+.cursor/
+.cursorrules
+.github/copilot-instructions.md
+
+# Runtime databases, uploads, indexes, and logs
+data/
+uploads/
+*.db
+*.sqlite3
+*.faiss
+faiss.index
+*.log
+logs/
+
+# Local model files and caches
+models/
+!backend/app/models/
+!backend/app/models/*.py
+*.bin
+*.gguf
+*.safetensors
+ollama_data/
+.cache/
+huggingface/
+
+# Editors and operating systems
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
-
-# AI / LLM 配置 (不上传到 GitHub)
-*.env
-.env.*
-.env.local
-.env.*.local
-config/secrets.*
-config/api_keys.*
-*.key
-*.pem
-
-# Claude Code
-.claude/
-CLAUDE.md
-
-# Cursor
-.cursor/
-.cursorrules
-
-# Copilot
-.github/copilot-instructions.md
-
-# AI 模型文件
-*.bin
-*.gguf
-*.safetensors
-models/
-ollama_data/
-
-# ChromaDB 数据
-chroma_data/
-*.chroma
-
-# 上传文件
-uploads/
-data/uploads/
-
-# Logs
-*.log
-logs/
-
-# OS
 .DS_Store
 Thumbs.db
-
-# Node (frontend)
-node_modules/
-front/node_modules/
-front/dist/
-
-# Database
-*.db
-*.sqlite3

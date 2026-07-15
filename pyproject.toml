@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "campusqa"
+version = "0.1.0"
+description = "Hohai University campus knowledge assistant"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "alembic>=1.16,<2",
+  "anyio>=4.6,<5",
+  "email-validator>=2.2,<3",
+  "faiss-cpu>=1.9,<2",
+  "fastapi>=0.115,<1",
+  "httpx>=0.28,<0.29",
+  "jieba>=0.42,<1",
+  "numpy>=1.26,<3",
+  "openai>=1.86,<3",
+  "pydantic-settings>=2.9,<3",
+  "pwdlib[argon2]>=0.2,<1",
+  "PyJWT>=2.10,<3",
+  "pypdf>=5.5,<7",
+  "pymysql>=1.1,<2",
+  "python-docx>=1.1,<2",
+  "python-multipart>=0.0.20,<1",
+  "rank-bm25>=0.2.2,<1",
+  "sentence-transformers>=4.1,<6",
+  "sqlalchemy>=2.0.41,<3",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+cpu = [
+  "torch>=2.7,<3",
+]
+cu128 = [
+  "torch>=2.7,<3",
+]
+cu130 = [
+  "torch>=2.7,<3",
+]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<8",
+  "ruff>=0.12,<1",
+]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "cu128" },
+  ],
+  [
+    { extra = "cpu" },
+    { extra = "cu130" },
+  ],
+  [
+    { extra = "cu128" },
+    { extra = "cu130" },
+  ],
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu128", extra = "cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+  { index = "pytorch-cu130", extra = "cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.setuptools]
+package-dir = {"" = "backend"}
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

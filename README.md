@@ -391,7 +391,6 @@ git diff --check
 ├── .gitignore                      密钥、数据、缓存和构建产物忽略规则
 ├── README.md                       部署、协作和文件导航（本文件）
 ├── alembic.ini                     Alembic 迁移入口配置
-├── campus_assistant_arch.md        旧架构草案到现架构文档的索引
 ├── pyproject.toml                  Python 项目、依赖、CPU/CUDA extra 和工具配置
 ├── uv.lock                         全平台可重复安装锁文件（权威）
 ├── requirements.txt                pip CPU 运行时兼容导出

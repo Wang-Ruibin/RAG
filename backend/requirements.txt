@@ -1,0 +1,23 @@
+# FastAPI 及其依赖
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# 数据库
+SQLAlchemy==2.0.36
+PyMySQL==1.1.1
+cryptography==44.0.0
+
+# 密码加密
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# JWT
+python-jose[cryptography]==3.3.0
+
+# Redis
+redis==5.2.1
+
+# CORS
+# (已包含在 FastAPI 中)

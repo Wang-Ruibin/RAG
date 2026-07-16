@@ -66,6 +66,9 @@ def test_document_ingestion_builds_rebuildable_index_and_delete_removes_it(
         assert record.content.startswith("校园卡补办指南")
         assert record.source_url == "https://example.edu.cn/card"
         assert index_manager.artifact_path(document_id).exists()
+        loaded = IndexManager()
+        assert loaded.load() == document.chunk_count
+        assert loaded.dense_search(np.array([1.0] + [0.0] * 7), 5)[0][0] == first_id
         document_service.update_metadata(
             db,
             document,

@@ -49,9 +49,17 @@ export async function streamChat(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   const parser = new SSEDecoder()
+  let completed = false
+  let serverError = ''
   while (true) {
     const { value, done } = await reader.read()
     if (done) break
-    for (const event of parser.push(decoder.decode(value, { stream: true }))) onEvent(event)
+    for (const event of parser.push(decoder.decode(value, { stream: true }))) {
+      onEvent(event)
+      if (event.event === 'done') completed = true
+      if (event.event === 'error') serverError = String(event.data.message || '回答生成失败')
+    }
   }
+  if (serverError) throw new Error(serverError)
+  if (!completed) throw new Error('回答连接提前中断，请重试')
 }

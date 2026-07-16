@@ -50,8 +50,14 @@ class Settings(BaseSettings):
     reranker_max_length: int = 256
     rerank_candidate_k: int = 5
     model_local_files_only: bool = False
+    rag_prewarm: bool = True
     rerank_enabled: bool = True
     retrieval_min_score: float = 0.7256
+    retrieval_lexical_override_score: float = 0.70
+    retrieval_lexical_min_coverage: float = 0.8
+    retrieval_hybrid_max_rank: int = 3
+    retrieval_context_min_score: float = 0.60
+    retrieval_context_score_margin: float = 0.20
     dense_top_k: int = 20
     sparse_top_k: int = 20
     fusion_top_k: int = 12

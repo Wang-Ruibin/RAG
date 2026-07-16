@@ -236,6 +236,7 @@ uv run --no-sync python -c "import secrets; print(secrets.token_urlsafe(48))"
 | `RERANKER_MODEL` | BGE Cross-Encoder 精排模型 | 否 |
 | `MODEL_DEVICE` | `auto`、`cpu` 或 `cuda` | 否 |
 | `MODEL_LOCAL_FILES_ONLY` | 模型缓存完成后可设 `true` 离线演示 | 否 |
+| `RAG_PREWARM` | 启动时预热本地模型，避免首次问答承担冷启动耗时 | 否 |
 | `RERANK_ENABLED` | 是否启用本地精排 | 否 |
 | `RETRIEVAL_MIN_SCORE` | 评测集校准的拒答阈值 | 否 |
 | `FRONTEND_ORIGINS` | 开发模式允许的前端来源 | 否 |

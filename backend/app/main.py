@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,9 +19,10 @@ from app.core.responses import success
 from app.models.enums import MessageStatus
 from app.models.orm import Message
 from app.rag.index import index_manager
+from app.rag.retrieval import retrieval_service
 from app.services.documents import document_service
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 class SPAStaticFiles(StaticFiles):
@@ -45,7 +47,15 @@ async def lifespan(_app: FastAPI):
             if not message.content:
                 message.content = "服务重启中断了本次回答，请重试。"
         db.commit()
-    index_manager.rebuild()
+    index_started = time.perf_counter()
+    index_count = index_manager.load()
+    logger.info(
+        "Knowledge index loaded chunks=%d elapsed=%.2fs",
+        index_count,
+        time.perf_counter() - index_started,
+    )
+    if settings.rag_prewarm and index_count:
+        retrieval_service.warmup()
     yield
 
 

@@ -22,6 +22,7 @@ class BGEEmbedder:
     def __init__(self) -> None:
         self._model = None
         self._lock = threading.Lock()
+        self._inference_lock = threading.Lock()
 
     def _load(self):  # type: ignore[no-untyped-def]
         if self._model is None:
@@ -37,12 +38,13 @@ class BGEEmbedder:
         return self._model
 
     def _encode(self, texts: list[str]) -> np.ndarray:
-        vectors = self._load().encode(
-            texts,
-            batch_size=settings.embedding_batch_size,
-            normalize_embeddings=True,
-            show_progress_bar=len(texts) > 100,
-        )
+        with self._inference_lock:
+            vectors = self._load().encode(
+                texts,
+                batch_size=settings.embedding_batch_size,
+                normalize_embeddings=True,
+                show_progress_bar=len(texts) > 100,
+            )
         result = np.asarray(vectors, dtype=np.float32)
         if result.ndim == 1:
             result = result.reshape(1, -1)

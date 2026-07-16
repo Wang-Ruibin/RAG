@@ -22,6 +22,8 @@ export function DocumentsPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [editing, setEditing] = useState<CampusDocument | null>(null)
   const [viewing, setViewing] = useState<CampusDocument | null>(null)
   const [saving, setSaving] = useState(false)
@@ -32,17 +34,25 @@ export function DocumentsPage() {
     published_at?: string
   }>()
 
+  const listPath = useMemo(() => {
+    const params = new URLSearchParams({
+      page: String(page),
+      size: String(pageSize),
+      q: query,
+    })
+    return `/api/documents?${params}`
+  }, [page, pageSize, query])
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await api<{ items: CampusDocument[]; total: number }>(`/api/documents?size=100&q=${encodeURIComponent(query)}`)
+      const result = await api<{ items: CampusDocument[]; total: number }>(listPath)
       setDocuments(result.items)
       setTotal(result.total)
     } finally { setLoading(false) }
-  }, [query])
+  }, [listPath])
   useEffect(() => {
     let cancelled = false
-    api<{ items: CampusDocument[]; total: number }>(`/api/documents?size=100&q=${encodeURIComponent(query)}`)
+    api<{ items: CampusDocument[]; total: number }>(listPath)
       .then((result) => {
         if (!cancelled) {
           setDocuments(result.items)
@@ -51,7 +61,7 @@ export function DocumentsPage() {
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [query])
+  }, [listPath])
   const processing = useMemo(() => documents.some((doc) => ['QUEUED', 'PROCESSING'].includes(doc.status)), [documents])
   useEffect(() => {
     if (!processing) return
@@ -131,7 +141,12 @@ export function DocumentsPage() {
     <div className="page-container">
       <header className="page-header">
         <div><Typography.Title level={3}>知识库管理</Typography.Title><Typography.Text type="secondary">共 {total} 篇文档，处理完成后才能参与问答</Typography.Text></div>
-        <Input.Search placeholder="搜索标题" allowClear onSearch={setQuery} style={{ width: 260 }} />
+        <Input.Search
+          placeholder="搜索标题"
+          allowClear
+          onSearch={(value) => { setLoading(true); setPage(1); setQuery(value) }}
+          style={{ width: 260 }}
+        />
       </header>
       <Upload.Dragger {...uploadProps} className="upload-card">
         <p className="ant-upload-drag-icon"><InboxOutlined /></p>
@@ -143,7 +158,24 @@ export function DocumentsPage() {
           rowKey="id"
           loading={loading}
           dataSource={documents}
-          pagination={{ pageSize: 10 }}
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showTotal: (count) => `共 ${count} 篇文档`,
+            onChange: (nextPage, nextPageSize) => {
+              if (nextPageSize !== pageSize) {
+                setLoading(true)
+                setPage(1)
+                setPageSize(nextPageSize)
+              } else {
+                setLoading(true)
+                setPage(nextPage)
+              }
+            },
+          }}
           scroll={{ x: 900 }}
           columns={[
             { title: '文档', dataIndex: 'title', width: 260, render: (value, row) => <div><strong>{value}</strong><br /><Typography.Text type="secondary">{row.original_name}</Typography.Text></div> },

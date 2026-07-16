@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from app.core.config import settings
 from .chunker import ChunkDraft
 
 KNOWLEDGE_SCHEMA_VERSION = 1
+logger = logging.getLogger("uvicorn.error")
 
 
 def tokenize(text: str) -> list[str]:
@@ -199,6 +201,92 @@ class IndexManager:
         with self._mutation_lock:
             return self._rebuild_unlocked()
 
+    def load(self) -> int:
+        """Load the persisted FAISS index and rebuild only the in-memory BM25 view.
+
+        Per-document NPZ artifacts remain the source of truth. If the derived
+        index is missing, stale, or corrupt, recover by rebuilding it from those
+        artifacts.
+        """
+        with self._mutation_lock:
+            try:
+                return self._load_persisted_unlocked()
+            except (OSError, ValueError, KeyError, json.JSONDecodeError, RuntimeError) as exc:
+                logger.warning("Persisted index unavailable; rebuilding from artifacts: %s", exc)
+                return self._rebuild_unlocked()
+
+    def _load_persisted_unlocked(self) -> int:
+        settings.ensure_directories()
+        index_path = settings.index_dir / "faiss.index"
+        manifest_path = settings.index_dir / "manifest.json"
+        if not manifest_path.is_file():
+            raise ValueError("index manifest is missing")
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("schema_version") != KNOWLEDGE_SCHEMA_VERSION:
+            raise ValueError("index schema version does not match")
+
+        expected_count = int(manifest.get("count", -1))
+        artifacts = sorted(settings.knowledge_artifact_dir.glob("*.npz"))
+        if int(manifest.get("document_count", len(artifacts))) != len(artifacts):
+            raise ValueError("document artifact count changed")
+
+        if expected_count == 0:
+            if artifacts:
+                raise ValueError("empty index has document artifacts")
+            with self._snapshot_lock:
+                self._snapshot = IndexSnapshot(None, None, (), {}, 0)
+            return 0
+
+        if not index_path.is_file():
+            raise ValueError("FAISS index is missing")
+        latest_artifact = max((path.stat().st_mtime_ns for path in artifacts), default=0)
+        if latest_artifact > index_path.stat().st_mtime_ns:
+            raise ValueError("document artifacts are newer than the FAISS index")
+
+        dense = faiss.read_index(str(index_path))
+        if not isinstance(dense, faiss.IndexIDMap2):
+            raise ValueError("persisted FAISS index has an unexpected type")
+        if dense.ntotal != expected_count:
+            raise ValueError("persisted FAISS vector count does not match manifest")
+
+        records: dict[int, KnowledgeChunk] = {}
+        models: set[str] = set()
+        dimensions: set[int] = set()
+        for artifact in artifacts:
+            artifact_records, model, dimension = self._load_artifact_records(artifact)
+            duplicate = records.keys() & artifact_records.keys()
+            if duplicate:
+                raise ValueError(f"duplicate chunk ID: {min(duplicate)}")
+            records.update(artifact_records)
+            models.add(model)
+            dimensions.add(dimension)
+
+        if len(records) != expected_count:
+            raise ValueError("document chunk count does not match manifest")
+        if models != {str(manifest.get("embedding_model"))}:
+            raise ValueError("embedding model does not match manifest")
+        if dimensions != {int(manifest.get("dimension", -1))} or dense.d not in dimensions:
+            raise ValueError("embedding dimension does not match manifest")
+
+        chunk_ids = tuple(sorted(records))
+        persisted_ids = tuple(sorted(int(value) for value in faiss.vector_to_array(dense.id_map)))
+        if persisted_ids != chunk_ids:
+            raise ValueError("FAISS vector IDs do not match document artifacts")
+
+        ordered_records = {chunk_id: records[chunk_id] for chunk_id in chunk_ids}
+        corpus = [tokenize(ordered_records[chunk_id].content) or [""] for chunk_id in chunk_ids]
+        snapshot = IndexSnapshot(
+            dense=dense,
+            bm25=BM25Okapi(corpus),
+            chunk_ids=chunk_ids,
+            records=ordered_records,
+            count=len(ordered_records),
+        )
+        with self._snapshot_lock:
+            self._snapshot = snapshot
+        return snapshot.count
+
     def _rebuild_unlocked(self) -> int:
         settings.ensure_directories()
         records: dict[int, KnowledgeChunk] = {}
@@ -286,6 +374,42 @@ class IndexManager:
                 token_count=int(raw.get("token_count") or 0),
             )
         return result, chunk_ids, vectors, str(payload["embedding_model"])
+
+    def _load_artifact_records(
+        self, path: Path
+    ) -> tuple[dict[int, KnowledgeChunk], str, int]:
+        """Read searchable text and IDs without decompressing stored embeddings."""
+        with np.load(path, allow_pickle=False) as archive:
+            chunk_ids = np.asarray(archive["chunk_ids"], dtype=np.int64)
+            payload = json.loads(archive["payload"].tobytes().decode("utf-8"))
+        chunks = payload.get("chunks", [])
+        if payload.get("schema_version") != KNOWLEDGE_SCHEMA_VERSION:
+            raise ValueError(f"unsupported knowledge artifact format: {path.name}")
+        if len(chunks) != len(chunk_ids):
+            raise ValueError(f"knowledge artifact has inconsistent chunk data: {path.name}")
+
+        published = payload.get("published_at")
+        published_at = date.fromisoformat(published) if published else None
+        document_id = int(payload["document_id"])
+        records: dict[int, KnowledgeChunk] = {}
+        for chunk_id, raw in zip(chunk_ids.tolist(), chunks, strict=True):
+            expected = self.stable_chunk_id(document_id, int(raw["ordinal"]))
+            if int(chunk_id) != expected:
+                raise ValueError(f"stable chunk ID validation failed: {path.name}")
+            records[int(chunk_id)] = KnowledgeChunk(
+                chunk_id=int(chunk_id),
+                document_id=document_id,
+                ordinal=int(raw["ordinal"]),
+                title=str(payload["title"]),
+                content=str(raw["content"]),
+                category=str(payload.get("category") or "其他"),
+                source_url=payload.get("source_url"),
+                published_at=published_at,
+                heading_path=raw.get("heading_path"),
+                page_number=raw.get("page_number"),
+                token_count=int(raw.get("token_count") or 0),
+            )
+        return records, str(payload["embedding_model"]), int(payload["dimension"])
 
     def records(self, chunk_ids: list[int]) -> dict[int, KnowledgeChunk]:
         snapshot = self.snapshot()

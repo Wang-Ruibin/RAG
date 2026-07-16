@@ -17,7 +17,34 @@ from app.rag.generation import generator, validate_citations
 from app.rag.retrieval import RetrievalResult, retrieval_service
 
 REFUSAL = "根据现有校园知识库，暂未找到足够相关的信息。建议补充问题细节或通过河海大学官网核实。"
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
+
+CONTEXT_REFERENCE_MARKERS = (
+    "它",
+    "这个",
+    "那个",
+    "上述",
+    "上面",
+    "该项",
+    "该校",
+    "其中",
+    "前者",
+    "后者",
+    "刚才",
+    "这些",
+    "那些",
+)
+SHORT_CONTEXT_QUESTIONS = {
+    "什么时候",
+    "在哪里",
+    "怎么办",
+    "怎么做",
+    "有哪些",
+    "多少",
+    "为什么",
+    "然后呢",
+    "还有呢",
+}
 
 
 def utc_now() -> datetime:
@@ -82,12 +109,80 @@ class ChatService:
     def retrieve(
         self, question: str, history: list[dict[str, str]]
     ) -> tuple[str, list[RetrievalResult]]:
-        standalone = generator.rewrite_query(question, history) if history else question
+        standalone = self._retrieval_query(question, history)
         return standalone, retrieval_service.search(standalone)
 
     @staticmethod
+    def _retrieval_query(question: str, history: list[dict[str, str]]) -> str:
+        """Resolve only genuinely context-dependent follow-ups without an LLM call."""
+        if not history:
+            return question
+        normalized = question.strip().rstrip("？?。！!")
+        needs_context = any(marker in normalized for marker in CONTEXT_REFERENCE_MARKERS)
+        needs_context = needs_context or normalized in SHORT_CONTEXT_QUESTIONS
+        if not needs_context:
+            return question
+        previous_user = next(
+            (item["content"] for item in reversed(history) if item.get("role") == "user"),
+            "",
+        )
+        return f"{previous_user} {question}".strip() if previous_user else question
+
+    @staticmethod
     def is_low_confidence(results: list[RetrievalResult]) -> bool:
-        return not results or results[0].score < settings.retrieval_min_score
+        if not results:
+            return True
+        top = results[0]
+        if top.score >= settings.retrieval_min_score:
+            return False
+        strong_lexical_match = (
+            top.score >= settings.retrieval_lexical_override_score
+            and top.lexical_coverage >= settings.retrieval_lexical_min_coverage
+            and top.dense_rank is not None
+            and top.dense_rank <= settings.retrieval_hybrid_max_rank
+            and top.sparse_rank is not None
+            and top.sparse_rank <= settings.retrieval_hybrid_max_rank
+        )
+        if strong_lexical_match:
+            logger.info(
+                "Retrieval threshold overridden by hybrid lexical evidence "
+                "document=%s score=%.4f coverage=%.2f dense_rank=%s sparse_rank=%s",
+                top.document_id,
+                top.score,
+                top.lexical_coverage,
+                top.dense_rank,
+                top.sparse_rank,
+            )
+        return not strong_lexical_match
+
+    @staticmethod
+    def relevant_context(results: list[RetrievalResult]) -> list[RetrievalResult]:
+        """Keep only strongly related chunks, while retaining at most the configured Top-K."""
+        if not results:
+            return []
+        top_score = results[0].score
+        cutoff = max(
+            settings.retrieval_context_min_score,
+            top_score - settings.retrieval_context_score_margin,
+        )
+        selected = [results[0]]
+        selected.extend(result for result in results[1:] if result.score >= cutoff)
+        return selected[: settings.context_top_k]
+
+    @staticmethod
+    def grounded_answer(
+        raw_answer: str, results: list[RetrievalResult]
+    ) -> tuple[str, list[dict[str, object]], list[int]]:
+        """Validate citations and expose only the strongly related context sources."""
+        answer, cited = validate_citations(raw_answer, len(results))
+        if results and not cited:
+            answer = f"{answer} [S1]".strip()
+            cited = [1]
+        sources = [
+            result.source_dict(citation_index=index)
+            for index, result in enumerate(results, start=1)
+        ]
+        return answer, sources, cited
 
     def complete(
         self,
@@ -99,21 +194,22 @@ class ChatService:
         started = time.perf_counter()
         conversation, assistant, history = self.prepare(db, user, question, conversation_id)
         try:
-            _standalone, results = self.retrieve(question, history)
-            if self.is_low_confidence(results):
+            _standalone, retrieved = self.retrieve(question, history)
+            if self.is_low_confidence(retrieved):
                 answer = REFUSAL
                 sources: list[dict[str, object]] = []
             else:
+                results = self.relevant_context(retrieved)
                 raw_answer = generator.complete(question, results)
-                answer, cited = validate_citations(raw_answer, len(results))
-                selected = [results[index - 1] for index in cited] if cited else results
-                sources = [result.source_dict() for result in selected]
+                if not raw_answer.strip():
+                    raise RuntimeError("LLM returned an empty answer")
+                answer, sources, _cited = self.grounded_answer(raw_answer, results)
             latency = int((time.perf_counter() - started) * 1000)
             assistant.content = answer
             assistant.sources_json = sources
             assistant.status = MessageStatus.COMPLETE
             assistant.latency_ms = latency
-            assistant.retrieval_score = results[0].score if results else None
+            assistant.retrieval_score = retrieved[0].score if retrieved else None
             db.commit()
             return {
                 "conversation_id": conversation.id,
@@ -141,20 +237,61 @@ class ChatService:
         results: list[RetrievalResult] = []
         sources: list[dict[str, object]] = []
         try:
-            _standalone, results = self.retrieve(question, history)
-            if self.is_low_confidence(results):
+            yield sse("status", {"phase": "retrieval", "message": "正在检索校园知识库…"})
+            retrieval_started = time.perf_counter()
+            _standalone, retrieved = self.retrieve(question, history)
+            logger.info(
+                "Chat retrieval completed assistant_id=%s elapsed=%.2fs results=%d",
+                assistant_id,
+                time.perf_counter() - retrieval_started,
+                len(retrieved),
+            )
+            if self.is_low_confidence(retrieved):
                 full_answer = REFUSAL
-                yield sse("sources", {"items": [], "low_confidence": True})
                 yield sse("delta", {"text": full_answer})
             else:
-                sources = [result.source_dict() for result in results]
-                yield sse("sources", {"items": sources, "low_confidence": False})
+                results = self.relevant_context(retrieved)
+                logger.info(
+                    "Chat context filtered assistant_id=%s retrieved=%d selected=%d "
+                    "cutoff_floor=%.2f",
+                    assistant_id,
+                    len(retrieved),
+                    len(results),
+                    settings.retrieval_context_min_score,
+                )
+                yield sse("status", {"phase": "generation", "message": "正在组织有依据的回答…"})
+                generation_started = time.perf_counter()
+                first_delta_at: float | None = None
                 for delta in generator.stream(question, results):
+                    if first_delta_at is None:
+                        first_delta_at = time.perf_counter()
+                        logger.info(
+                            "Chat first LLM token assistant_id=%s elapsed=%.2fs",
+                            assistant_id,
+                            first_delta_at - generation_started,
+                        )
                     full_answer += delta
                     yield sse("delta", {"text": delta})
-            cleaned, cited = validate_citations(full_answer, len(results))
-            if cited:
-                sources = [results[index - 1].source_dict() for index in cited]
+                if not full_answer.strip():
+                    raise RuntimeError("LLM stream returned no answer content")
+                logger.info(
+                    "Chat LLM stream completed assistant_id=%s elapsed=%.2fs chars=%d",
+                    assistant_id,
+                    time.perf_counter() - generation_started,
+                    len(full_answer),
+                )
+            original_answer = full_answer.strip()
+            cleaned, sources, _cited = self.grounded_answer(full_answer, results)
+            if cleaned.startswith(original_answer) and cleaned != original_answer:
+                yield sse("delta", {"text": cleaned[len(original_answer) :]})
+            yield sse(
+                "sources",
+                {
+                    "items": sources,
+                    "low_confidence": self.is_low_confidence(retrieved),
+                    "final": True,
+                },
+            )
             latency = int((time.perf_counter() - started) * 1000)
             self._finalize(
                 assistant_id,
@@ -162,7 +299,7 @@ class ChatService:
                 sources=sources,
                 status=MessageStatus.COMPLETE,
                 latency_ms=latency,
-                retrieval_score=results[0].score if results else None,
+                retrieval_score=retrieved[0].score if retrieved else None,
             )
             yield sse("done", {"latency_ms": latency, "model": settings.llm_model})
         except GeneratorExit:

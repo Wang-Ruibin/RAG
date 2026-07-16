@@ -92,7 +92,7 @@ sequenceDiagram
 
 ## 资源与部署
 
-目标环境为 8 GB、CPU-only WSL。`uv` 强制使用官方 CPU PyTorch wheel；Embedding 和
-Reranker 延迟加载。前端构建产物由 FastAPI 静态托管，演示只需要一个 Uvicorn 进程和
+目标环境为 8 GB、CPU-only WSL。`uv` 强制使用官方 CPU PyTorch wheel；默认在服务就绪前
+预热 Embedding 和 Reranker，避免首次问答承担模型冷启动耗时。前端构建产物由 FastAPI 静态托管，演示只需要一个 Uvicorn 进程和
 本机 MySQL。模型缓存完成后用 `MODEL_LOCAL_FILES_ONLY=true` 禁止远程版本检查。MVP
 不引入 Redis、Java、Docker 或独立任务队列。

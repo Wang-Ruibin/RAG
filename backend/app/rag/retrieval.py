@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 import math
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date
@@ -9,7 +11,46 @@ from datetime import date
 from app.core.config import settings
 
 from . import embedding
-from .index import IndexManager, index_manager
+from .index import IndexManager, index_manager, tokenize
+
+logger = logging.getLogger("uvicorn.error")
+
+LEXICAL_STOPWORDS = {
+    "什么",
+    "怎么",
+    "如何",
+    "多少",
+    "一下",
+    "请问",
+    "等于",
+    "的",
+    "了",
+    "吗",
+    "呢",
+    "是",
+    "几",
+    "做",
+}
+
+
+def lexical_coverage(query: str, content: str) -> float:
+    """Measure meaningful query-token coverage in a retrieved chunk."""
+    normalized_query = query.replace("等于", "=").replace("＝", "=")
+    normalized_content = content.replace("等于", "=").replace("＝", "=")
+
+    def meaningful(text: str) -> set[str]:
+        return {
+            token
+            for token in tokenize(text)
+            if token not in LEXICAL_STOPWORDS
+            and (token.isalnum() or len(token) > 1 or token in {"+", "-", "*", "/", "="})
+        }
+
+    query_tokens = meaningful(normalized_query)
+    if not query_tokens:
+        return 0.0
+    content_tokens = meaningful(normalized_content)
+    return len(query_tokens & content_tokens) / len(query_tokens)
 
 
 @dataclass(slots=True)
@@ -21,10 +62,13 @@ class RetrievalResult:
     source_url: str | None
     published_at: date | None
     score: float
+    dense_rank: int | None = None
+    sparse_rank: int | None = None
+    lexical_coverage: float = 0.0
 
-    def source_dict(self) -> dict[str, object]:
+    def source_dict(self, citation_index: int | None = None) -> dict[str, object]:
         snippet = self.content[:360] + ("…" if len(self.content) > 360 else "")
-        return {
+        source = {
             "chunk_id": self.chunk_id,
             "document_id": self.document_id,
             "title": self.title,
@@ -33,12 +77,16 @@ class RetrievalResult:
             "score": round(self.score, 4),
             "snippet": snippet,
         }
+        if citation_index is not None:
+            source["citation_index"] = citation_index
+        return source
 
 
 class LocalReranker:
     def __init__(self) -> None:
         self._model = None
         self._lock = threading.Lock()
+        self._inference_lock = threading.Lock()
 
     def _load(self):  # type: ignore[no-untyped-def]
         if self._model is None:
@@ -55,7 +103,8 @@ class LocalReranker:
         return self._model
 
     def scores(self, query: str, contents: list[str]) -> list[float]:
-        raw = self._load().predict([(query, content) for content in contents])
+        with self._inference_lock:
+            raw = self._load().predict([(query, content) for content in contents])
         return [1.0 / (1.0 + math.exp(-float(value))) for value in raw]
 
 
@@ -69,6 +118,18 @@ class RetrievalService:
         self.reranker = reranker or LocalReranker()
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="retrieval")
 
+    def warmup(self) -> None:
+        """Load local models before the server accepts its first chat request."""
+        snapshot = self.manager.snapshot()
+        if snapshot.count == 0:
+            return
+        started = time.perf_counter()
+        embedding.embedder.embed_query("河海大学")
+        if settings.rerank_enabled:
+            first_record = snapshot.records[snapshot.chunk_ids[0]]
+            self.reranker.scores("河海大学", [first_record.content])
+        logger.info("RAG local models warmed in %.2fs", time.perf_counter() - started)
+
     def search(
         self,
         query: str,
@@ -77,7 +138,9 @@ class RetrievalService:
         use_sparse: bool = True,
         use_rerank: bool | None = None,
     ) -> list[RetrievalResult]:
+        started = time.perf_counter()
         vector = embedding.embedder.embed_query(query)
+        embedded_at = time.perf_counter()
         dense_future = self._pool.submit(self.manager.dense_search, vector, settings.dense_top_k)
         sparse_future = (
             self._pool.submit(self.manager.sparse_search, query, settings.sparse_top_k)
@@ -86,6 +149,8 @@ class RetrievalService:
         )
         dense = dense_future.result()
         sparse = sparse_future.result() if sparse_future else []
+        dense_ranks = {chunk_id: rank for rank, (chunk_id, _score) in enumerate(dense, start=1)}
+        sparse_ranks = {chunk_id: rank for rank, (chunk_id, _score) in enumerate(sparse, start=1)}
         fused = self._rrf(dense, sparse)[: settings.fusion_top_k]
         if not fused:
             return []
@@ -107,6 +172,17 @@ class RetrievalService:
             ]
             candidates.sort(key=lambda item: item[2], reverse=True)
 
+        logger.info(
+            "RAG retrieval completed query_embedding=%.2fs total=%.2fs candidates=%d "
+            "rerank=%s top_document=%s top_score=%.4f",
+            embedded_at - started,
+            time.perf_counter() - started,
+            len(candidates),
+            should_rerank,
+            candidates[0][1].document_id if candidates else None,
+            candidates[0][2] if candidates else 0.0,
+        )
+
         limit = top_k or settings.context_top_k
         return [
             RetrievalResult(
@@ -117,6 +193,9 @@ class RetrievalService:
                 source_url=record.source_url,
                 published_at=record.published_at,
                 score=float(score),
+                dense_rank=dense_ranks.get(chunk_id),
+                sparse_rank=sparse_ranks.get(chunk_id),
+                lexical_coverage=lexical_coverage(query, record.content),
             )
             for chunk_id, record, score in candidates[:limit]
         ]

@@ -17,6 +17,7 @@ export interface SourceRef {
   published_at?: string | null
   score: number
   snippet: string
+  citation_index?: number
 }
 
 export interface ChatMessage {

@@ -15,8 +15,10 @@ export function ChatPage() {
   const [sending, setSending] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [streamError, setStreamError] = useState('')
+  const [streamStatus, setStreamStatus] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const deletingConversationIds = useRef(new Set<number>())
 
   const loadConversations = () => api<Conversation[]>('/api/conversations').then(setConversations)
   useEffect(() => { void loadConversations() }, [])
@@ -40,6 +42,8 @@ export function ChatPage() {
     if (event.event === 'start') {
       const id = Number(event.data.conversation_id)
       setActiveId(id)
+    } else if (event.event === 'status') {
+      setStreamStatus(String(event.data.message || '正在处理…'))
     } else if (event.event === 'sources') {
       const sources = (event.data.items || []) as SourceRef[]
       setMessages((current) => current.map((item, index) =>
@@ -50,7 +54,13 @@ export function ChatPage() {
       setMessages((current) => current.map((item, index) =>
         index === current.length - 1 ? { ...item, content: item.content + text } : item,
       ))
+    } else if (event.event === 'done') {
+      setStreamStatus('')
+      setMessages((current) => current.map((item, index) =>
+        index === current.length - 1 ? { ...item, status: 'COMPLETE' } : item,
+      ))
     } else if (event.event === 'error') {
+      setStreamStatus('')
       setStreamError(String(event.data.message || '回答生成失败'))
       setMessages((current) => current.map((item, index) =>
         index === current.length - 1 ? { ...item, status: 'ERROR' } : item,
@@ -64,6 +74,7 @@ export function ChatPage() {
     setInput('')
     setSending(true)
     setStreamError('')
+    setStreamStatus('正在连接问答服务…')
     setMessages((current) => [
       ...current,
       { role: 'USER', content: question, sources: [], status: 'COMPLETE' },
@@ -73,22 +84,33 @@ export function ChatPage() {
     abortRef.current = controller
     try {
       await streamChat(question, activeId, controller.signal, handleEvent)
-      setMessages((current) => current.map((item, index) =>
-        index === current.length - 1 ? { ...item, status: 'COMPLETE' } : item,
-      ))
       await loadConversations()
     } catch (reason) {
-      if (!controller.signal.aborted) setStreamError(reason instanceof Error ? reason.message : '连接中断')
+      const status = controller.signal.aborted ? 'CANCELLED' : 'ERROR'
+      setMessages((current) => current.map((item, index) =>
+        index === current.length - 1 ? { ...item, status } : item,
+      ))
+      if (!controller.signal.aborted) {
+        setStreamError(reason instanceof Error ? reason.message : '连接中断')
+      }
     } finally {
       abortRef.current = null
+      setStreamStatus('')
       setSending(false)
     }
   }
 
   async function removeConversation(id: number) {
-    await api(`/api/conversations/${id}`, { method: 'DELETE' })
-    if (activeId === id) { setActiveId(null); setMessages([]) }
-    await loadConversations()
+    if (deletingConversationIds.current.has(id)) return
+    deletingConversationIds.current.add(id)
+    try {
+      await api(`/api/conversations/${id}`, { method: 'DELETE' })
+      if (activeId === id) { setActiveId(null); setMessages([]) }
+      await loadConversations()
+      void message.success('会话已删除')
+    } finally {
+      deletingConversationIds.current.delete(id)
+    }
   }
 
   return (
@@ -103,9 +125,19 @@ export function ChatPage() {
           renderItem={(item) => (
             <List.Item
               className={activeId === item.id ? 'conversation active' : 'conversation'}
-              onClick={() => void openConversation(item.id)}
+              onClick={() => {
+                if (!deletingConversationIds.current.has(item.id)) void openConversation(item.id)
+              }}
               actions={[
-                <Popconfirm key="delete" title="删除这个会话？" onConfirm={() => void removeConversation(item.id)}>
+                <Popconfirm
+                  key="delete"
+                  title="删除这个会话？"
+                  onConfirm={(event) => {
+                    event?.stopPropagation()
+                    return removeConversation(item.id)
+                  }}
+                  onCancel={(event) => event?.stopPropagation()}
+                >
                   <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={(event) => event.stopPropagation()} />
                 </Popconfirm>,
               ]}
@@ -127,9 +159,12 @@ export function ChatPage() {
               <div className="message-role">{item.role === 'USER' ? '你' : '河海智答'}</div>
               <div className="message-body">
                 {item.role === 'ASSISTANT' ? (
-                  item.content ? <ReactMarkdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>{item.content}</ReactMarkdown> : <Spin size="small" />
+                  item.content ? <ReactMarkdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>{item.content}</ReactMarkdown>
+                    : item.status === 'ERROR' ? <Typography.Text type="danger">回答生成失败，请重试。</Typography.Text>
+                      : item.status === 'CANCELLED' ? <Typography.Text type="secondary">本次回答已停止。</Typography.Text>
+                        : <Space><Spin size="small" /><Typography.Text type="secondary">{index === messages.length - 1 ? streamStatus || '正在处理…' : '正在处理…'}</Typography.Text></Space>
                 ) : <Typography.Paragraph>{item.content}</Typography.Paragraph>}
-                <SourceCards sources={item.sources || []} />
+                {item.content ? <SourceCards sources={item.sources || []} /> : null}
               </div>
             </article>
           ))}

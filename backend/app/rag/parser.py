@@ -87,9 +87,9 @@ def _parse_markdown(text: str, fallback_title: str) -> ParsedDocument:
     return ParsedDocument(title=title, sections=sections, source_url=source, published_at=published)
 
 
-def parse_file(path: Path) -> ParsedDocument:
+def parse_file(path: Path, fallback_title: str | None = None) -> ParsedDocument:
     suffix = path.suffix.lower()
-    fallback = path.stem
+    fallback = (fallback_title or path.stem).strip() or path.stem
     if suffix in {".md", ".txt"}:
         text = path.read_text(encoding="utf-8", errors="ignore")
         if suffix == ".md":

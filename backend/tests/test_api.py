@@ -139,12 +139,25 @@ async def test_stream_chat_emits_protocol_and_persists_complete_message(
         published_at=date(2026, 6, 24),
         score=0.95,
     )
-    monkeypatch.setattr(chat_service, "retrieve", lambda question, _history: (question, [result]))
-    monkeypatch.setattr(
-        generator,
-        "stream",
-        lambda _question, _results: iter(["报名时间", "见通知。[S1]"]),
+    weak_result = RetrievalResult(
+        chunk_id=22,
+        document_id=10,
+        title="无关资料",
+        content="与问题无关的正文。",
+        source_url=None,
+        published_at=None,
+        score=0.50,
     )
+    monkeypatch.setattr(
+        chat_service, "retrieve", lambda question, _history: (question, [result, weak_result])
+    )
+    generation_context: list[RetrievalResult] = []
+
+    def fake_stream(_question, results):
+        generation_context.extend(results)
+        return iter(["报名时间", "见通知。[S1]"])
+
+    monkeypatch.setattr(generator, "stream", fake_stream)
 
     response = await client.post(
         "/api/chat/stream",
@@ -155,9 +168,13 @@ async def test_stream_chat_emits_protocol_and_persists_complete_message(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert "event: start" in response.text
-    assert "event: sources" in response.text
+    assert response.text.count("event: status") == 2
+    assert response.text.count("event: sources") == 1
+    assert '"final": true' in response.text
     assert response.text.count("event: delta") == 2
     assert "event: done" in response.text
+    assert generation_context == [result]
+    assert "无关资料" not in response.text
     with SessionLocal() as db:
         assistant = db.query(Message).order_by(Message.id.desc()).first()
         assert assistant is not None
@@ -213,6 +230,35 @@ async def test_stream_error_is_sanitized_and_persisted(client: AsyncClient, monk
     assert "event: error" in response.text
     assert "回答生成失败，请稍后重试" in response.text
     assert "internal-sensitive-upstream-detail" not in response.text
+    with SessionLocal() as db:
+        assistant = db.query(Message).order_by(Message.id.desc()).first()
+        assert assistant is not None
+        assert assistant.status == MessageStatus.ERROR
+
+
+async def test_empty_llm_stream_is_reported_as_error(client: AsyncClient, monkeypatch) -> None:
+    registered = await register(client, "empty-stream@example.com")
+    header = auth_header(str(registered["access_token"]))
+    result = RetrievalResult(
+        chunk_id=41,
+        document_id=13,
+        title="测试资料",
+        content="测试资料正文。",
+        source_url=None,
+        published_at=None,
+        score=0.99,
+    )
+    monkeypatch.setattr(chat_service, "retrieve", lambda question, _history: (question, [result]))
+    monkeypatch.setattr(generator, "stream", lambda _question, _results: iter(()))
+
+    response = await client.post(
+        "/api/chat/stream",
+        headers=header,
+        json={"question": "测试空响应"},
+    )
+
+    assert "event: error" in response.text
+    assert "event: done" not in response.text
     with SessionLocal() as db:
         assistant = db.query(Message).order_by(Message.id.desc()).first()
         assert assistant is not None

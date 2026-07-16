@@ -144,7 +144,8 @@ class DocumentService:
                 if document is None:
                     return
                 path = settings.upload_dir / document.stored_name
-            parsed = parse_file(path)
+                fallback_title = document.title
+            parsed = parse_file(path, fallback_title=fallback_title)
 
             self._set_stage(document_id, job_id, ProcessingStage.CLEANING)
             self._set_stage(document_id, job_id, ProcessingStage.CHUNKING)

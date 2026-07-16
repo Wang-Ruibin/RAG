@@ -1,7 +1,7 @@
 # CampusQA：河海大学校园知识问答助手
 
 CampusQA 是一个面向河海大学学生与知识库管理员的中文 LLM + RAG Web 应用。系统把
-1,026 篇版本化校园资料解析、清洗、切块并写入课件要求的 FAISS 向量知识库，通过
+1,027 篇版本化校园资料解析、清洗、切块并写入课件要求的 FAISS 向量知识库，通过
 `bge-small-zh-v1.5`、中文 BM25、RRF 和 `bge-reranker-base` 找到原文，再由 DeepSeek
 生成带来源编号的回答。知识库没有依据时，系统明确拒答。
 
@@ -15,7 +15,8 @@ Agent 是指标达标后的增强路线，不阻塞本项目部署与验收。
   重新处理和删除；普通用户看不到菜单，直接调用接口也会返回 403。
 - 标题层级感知切块、512 维 BGE 向量、稳定 chunk/vector ID、FAISS 余弦检索和中文
   BM25。
-- Dense Top20 + BM25 Top20 + RRF Top12 + Cross-Encoder 精排 Top5。
+- Dense Top20 + BM25 Top20 + RRF Top12 + Cross-Encoder 精排，并按绝对分数与相对分差
+  过滤弱相关上下文，最多保留 5 条来源。
 - 同步问答与 POST SSE 流式问答、来源卡片、多轮会话、停止生成和异常状态持久化。
 - React 19 + TypeScript + Ant Design 管理端和聊天端，安全 Markdown 与移动端适配。
 - 50 条版本化评测集、阈值校准脚本，以及不消耗真实 Token 的 Fake LLM 接口测试。
@@ -26,7 +27,7 @@ Agent 是指标达标后的增强路线，不阻塞本项目部署与验收。
 ```text
 浏览器（React）
   ├─ JSON API：认证、用户、文档、会话、统计
-  └─ POST SSE：start → sources → delta → done/error
+  └─ POST SSE：start → status/delta → final sources → done/error
                        │
                   FastAPI 服务
        ┌───────────────┴────────────────┐
@@ -239,6 +240,10 @@ uv run --no-sync python -c "import secrets; print(secrets.token_urlsafe(48))"
 | `RAG_PREWARM` | 启动时预热本地模型，避免首次问答承担冷启动耗时 | 否 |
 | `RERANK_ENABLED` | 是否启用本地精排 | 否 |
 | `RETRIEVAL_MIN_SCORE` | 评测集校准的拒答阈值 | 否 |
+| `RETRIEVAL_LEXICAL_*` | 关键词覆盖、Dense/BM25 排名共同支持的边界命中放行条件 | 否 |
+| `RETRIEVAL_CONTEXT_MIN_SCORE` | 后续上下文来源的最低精排分，默认 `0.60` | 否 |
+| `RETRIEVAL_CONTEXT_SCORE_MARGIN` | 后续来源与最高分允许的最大分差，默认 `0.20` | 否 |
+| `DENSE/SPARSE/FUSION/CONTEXT_TOP_K` | 各检索阶段候选数量；最终上下文最多 5 条 | 否 |
 | `FRONTEND_ORIGINS` | 开发模式允许的前端来源 | 否 |
 
 任何曾经出现在聊天、截图或提交里的旧 Key 都应先在服务商控制台撤销，再创建新 Key。
@@ -271,7 +276,7 @@ cd ..
 uv run --no-sync python -m app.cli index knowledge_docs --admin-email admin@campusqa.cn
 ```
 
-首次执行会下载两个 BGE 模型。全量处理 1,026 篇资料在 CPU 上耗时较长，GPU 可明显
+首次执行会下载两个 BGE 模型。全量处理 1,027 篇资料在 CPU 上耗时较长，GPU 可明显
 加快 Embedding 和精排预热。导入可重复执行：内容哈希相同的文档会跳过，失败文件会
 输出清单，完成后从知识工件原子重建 FAISS/BM25。
 
@@ -375,13 +380,14 @@ git status --short
 git diff --check
 ```
 
-当前 CPU 实测语料为 1,026 篇、3,867 个 chunk；50 条评测达到 Hit@5 0.950、MRR@5
-0.919、P95 1.462 秒、知识库外误接受率 0%。完整条件和指标解释见
-[评测总结](docs/evaluation_summary.md)。目标值不能替代真实实测值。
+2026-07-15 的 CPU 评测基线为 1,026 篇、3,867 个 chunk；50 条评测达到 Hit@5 0.950、
+MRR@5 0.919、P95 1.462 秒、知识库外误接受率 0%。当前版本化语料新增 1 篇计算示例，
+本机索引为 1,027 篇、3,868 个 chunk；尚未用新增语料重跑整套评测，因此原始 JSON 与
+基线指标保持不变。完整条件和指标解释见 [评测总结](docs/evaluation_summary.md)。
 
 ## 8. 项目结构树
 
-下面列出所有代码、配置、测试和说明文件。`knowledge_docs/` 的 1,026 个语料文件按分类
+下面列出所有代码、配置、测试和说明文件。`knowledge_docs/` 的 1,027 个语料文件按分类
 整体说明，不在 README 重复展开每个长文件名；`data/`、`.venv/`、`node_modules/`、
 `frontend/dist/` 是本机运行目录，不进入仓库。
 
@@ -464,7 +470,7 @@ git diff --check
 │       ├── lib/api.ts               JSON API client 与统一错误处理
 │       ├── lib/sse.ts               POST ReadableStream SSE 解析器
 │       ├── lib/sse.test.ts          SSE 分帧和异常解析 Vitest
-│       ├── components/SourceCards.tsx  引用标题、日期、分数、片段与官网链接
+│       ├── components/SourceCards.tsx  引用编号、标题、日期、片段与官网链接
 │       └── pages/
 │           ├── LoginPage.tsx        登录/注册页面
 │           ├── ChatPage.tsx         会话列表、流式聊天、停止和重试
@@ -486,7 +492,7 @@ git diff --check
 │   ├── start.py                     Windows/Linux/macOS/WSL 通用生产入口
 │   ├── start.sh                     Bash 启动包装器
 │   └── check_secrets.py             Git 发布前的密钥与口令痕迹扫描
-├── knowledge_docs/                  1,026 篇版本化河海大学知识资料
+├── knowledge_docs/                  1,027 篇版本化河海大学知识资料
 │   ├── academic/                    教务、课程和培养通知
 │   ├── academic_files/              教务附件转换出的文本资料
 │   ├── admin/                       学校管理、招生与行政通知

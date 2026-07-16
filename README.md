@@ -280,6 +280,10 @@ uv run --no-sync python -m app.cli index knowledge_docs --admin-email admin@camp
 加快 Embedding 和精排预热。导入可重复执行：内容哈希相同的文档会跳过，失败文件会
 输出清单，完成后从知识工件原子重建 FAISS/BM25。
 
+生产启动脚本也会在 Uvicorn 启动前幂等执行这一步：数据库中已有的内容按哈希跳过，
+运行期间从知识库删除的文档会立即从 NPZ、FAISS 和 BM25 中移除；如果对应源文件仍保留
+在 `knowledge_docs/`，则下次重启服务时会重新导入。运行期间不会监视本地目录或自动回填。
+
 用命令行验证原文检索：
 
 ```bash

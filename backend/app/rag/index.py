@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -201,14 +202,32 @@ class IndexManager:
         with self._mutation_lock:
             return self._rebuild_unlocked()
 
-    def load(self) -> int:
+    def load(self, *, valid_document_ids: Collection[int] | None = None) -> int:
         """Load the persisted FAISS index and rebuild only the in-memory BM25 view.
 
         Per-document NPZ artifacts remain the source of truth. If the derived
         index is missing, stale, or corrupt, recover by rebuilding it from those
-        artifacts.
+        artifacts. When database document IDs are supplied at application
+        startup, artifacts left behind by interrupted legacy deletions are
+        removed before the index is loaded.
         """
         with self._mutation_lock:
+            if valid_document_ids is not None:
+                valid_ids = {int(value) for value in valid_document_ids}
+                removed = []
+                for artifact in settings.knowledge_artifact_dir.glob("*.npz"):
+                    try:
+                        document_id = int(artifact.stem)
+                    except ValueError:
+                        continue
+                    if document_id not in valid_ids:
+                        artifact.unlink()
+                        removed.append(document_id)
+                if removed:
+                    logger.warning(
+                        "Removed orphaned knowledge artifacts document_ids=%s",
+                        ",".join(str(value) for value in sorted(removed)),
+                    )
             try:
                 return self._load_persisted_unlocked()
             except (OSError, ValueError, KeyError, json.JSONDecodeError, RuntimeError) as exc:

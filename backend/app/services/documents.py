@@ -35,6 +35,10 @@ class DocumentService:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ingestion")
         self._futures: set[Future[None]] = set()
         self._future_lock = threading.Lock()
+        # Keep the final index write and document deletion mutually exclusive.
+        # Otherwise a worker that passed its last database check can recreate
+        # an NPZ artifact after the corresponding document row was deleted.
+        self._lifecycle_lock = threading.RLock()
 
     def save_upload(
         self,
@@ -158,35 +162,36 @@ class DocumentService:
             if len(vectors) != len(drafts):
                 raise RuntimeError("Embedding 返回数量与 chunk 数不一致")
 
-            self._set_stage(document_id, job_id, ProcessingStage.INDEXING)
-            with SessionLocal() as db:
-                document = db.get(Document, document_id)
-                if document is None:
-                    return
-                title = parsed.title or document.title
-                source_url = parsed.source_url or document.source_url
-                published_at = parsed.published_at or document.published_at
-                category = document.category
-                document.title = title
-                document.source_url = source_url
-                document.published_at = published_at
-                document.chunk_count = len(drafts)
-                document.status = DocumentStatus.PROCESSING
-                document.stage = ProcessingStage.INDEXING
-                db.commit()
+            with self._lifecycle_lock:
+                self._set_stage(document_id, job_id, ProcessingStage.INDEXING)
+                with SessionLocal() as db:
+                    document = db.get(Document, document_id)
+                    if document is None or document.status == DocumentStatus.DELETING:
+                        return
+                    title = parsed.title or document.title
+                    source_url = parsed.source_url or document.source_url
+                    published_at = parsed.published_at or document.published_at
+                    category = document.category
+                    document.title = title
+                    document.source_url = source_url
+                    document.published_at = published_at
+                    document.chunk_count = len(drafts)
+                    document.status = DocumentStatus.PROCESSING
+                    document.stage = ProcessingStage.INDEXING
+                    db.commit()
 
-            index_manager.upsert_document(
-                document_id=document_id,
-                title=title,
-                category=category,
-                source_url=source_url,
-                published_at=published_at,
-                drafts=drafts,
-                vectors=vectors,
-                embedding_model=settings.embedding_model,
-                rebuild=rebuild,
-            )
-            self._finish(document_id, job_id)
+                index_manager.upsert_document(
+                    document_id=document_id,
+                    title=title,
+                    category=category,
+                    source_url=source_url,
+                    published_at=published_at,
+                    drafts=drafts,
+                    vectors=vectors,
+                    embedding_model=settings.embedding_model,
+                    rebuild=rebuild,
+                )
+                self._finish(document_id, job_id)
         except Exception as exc:
             self._fail(document_id, job_id, exc)
             if rebuild:
@@ -247,24 +252,34 @@ class DocumentService:
             db.commit()
 
     def delete_document(self, db: Session, document: Document) -> None:
-        document.status = DocumentStatus.DELETING
-        stored_name = document.stored_name
-        db.commit()
-        try:
-            index_manager.delete_document(document.id)
-            db.delete(document)
+        document_id = document.id
+        with self._lifecycle_lock:
+            current = db.get(Document, document_id)
+            if current is None:
+                return
+            current.status = DocumentStatus.DELETING
+            stored_name = current.stored_name
             db.commit()
-        except Exception as exc:
-            db.rollback()
-            current = db.get(Document, document.id)
-            if current is not None:
-                current.status = DocumentStatus.FAILED
-                current.error = f"删除知识库资料失败: {type(exc).__name__}: {exc}"[:4000]
+            try:
+                index_manager.delete_document(document_id)
+                if any(
+                    record.document_id == document_id
+                    for record in index_manager.snapshot().records.values()
+                ):
+                    raise RuntimeError("知识库索引仍包含已删除文档")
+                db.delete(current)
                 db.commit()
-            raise
-        path = settings.upload_dir / stored_name
-        if path.exists():
-            path.unlink()
+            except Exception as exc:
+                db.rollback()
+                current = db.get(Document, document_id)
+                if current is not None:
+                    current.status = DocumentStatus.FAILED
+                    current.error = f"删除知识库资料失败: {type(exc).__name__}: {exc}"[:4000]
+                    db.commit()
+                raise
+            path = settings.upload_dir / stored_name
+            if path.exists():
+                path.unlink()
 
     def update_metadata(
         self,

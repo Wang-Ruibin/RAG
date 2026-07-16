@@ -10,14 +10,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import admin, auth, chat, documents, system
 from app.core.config import settings
 from app.core.database import SessionLocal, init_database
 from app.core.responses import success
-from app.models.enums import MessageStatus
-from app.models.orm import Message
+from app.models.enums import DocumentStatus, MessageStatus
+from app.models.orm import Document, Message
 from app.rag.index import index_manager
 from app.rag.retrieval import retrieval_service
 from app.services.documents import document_service
@@ -47,8 +48,13 @@ async def lifespan(_app: FastAPI):
             if not message.content:
                 message.content = "服务重启中断了本次回答，请重试。"
         db.commit()
+        valid_document_ids = set(
+            db.scalars(
+                select(Document.id).where(Document.status != DocumentStatus.DELETING)
+            ).all()
+        )
     index_started = time.perf_counter()
-    index_count = index_manager.load()
+    index_count = index_manager.load(valid_document_ids=valid_document_ids)
     logger.info(
         "Knowledge index loaded chunks=%d elapsed=%.2fs",
         index_count,

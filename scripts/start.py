@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -18,6 +19,19 @@ def main() -> None:
         raise SystemExit("缺少前端构建产物：请先执行 cd frontend && npm run build。")
 
     os.chdir(root)
+    sys.path.insert(0, str(root / "backend"))
+
+    # Keep the versioned corpus and runtime knowledge base in sync at process
+    # startup. The import is idempotent: existing content hashes are skipped,
+    # while a document deleted at runtime can be imported again on a later
+    # restart if its source file intentionally remains in knowledge_docs/.
+    from app.cli import index_corpus
+    from app.core.config import settings
+    from app.core.database import init_database
+
+    init_database()
+    index_corpus(settings.knowledge_dir, settings.initial_admin_email)
+
     uvicorn.run(
         "app.main:app",
         app_dir=str(root / "backend"),

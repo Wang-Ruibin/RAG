@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -7,6 +9,7 @@ from app.core.security import hash_password
 from app.models.enums import DocumentStatus, ProcessingStage, Role
 from app.models.orm import Document, User
 from app.rag import embedding
+from app.rag.chunker import ChunkDraft
 from app.rag.index import IndexManager, index_manager
 from app.services.documents import document_service
 
@@ -95,3 +98,83 @@ def test_business_database_has_no_knowledge_chunk_table() -> None:
     from app.core.database import Base
 
     assert "chunks" not in Base.metadata.tables
+
+
+def test_index_load_removes_artifacts_without_database_documents() -> None:
+    document_id = 1028
+    index_manager.upsert_document(
+        document_id=document_id,
+        title="计算题",
+        category="测试",
+        source_url=None,
+        published_at=None,
+        drafts=[ChunkDraft(content="计算题\n1+1=2", ordinal=0)],
+        vectors=np.array([[1.0, 0.0]], dtype=np.float32),
+        embedding_model="test-embedding",
+    )
+    assert index_manager.artifact_path(document_id).exists()
+
+    recovered = IndexManager()
+    assert recovered.load(valid_document_ids=set()) == 0
+    assert not index_manager.artifact_path(document_id).exists()
+    assert recovered.count == 0
+
+
+def test_delete_during_embedding_cannot_recreate_document_artifact(monkeypatch) -> None:
+    with SessionLocal() as db:
+        admin = User(
+            name="知识库管理员",
+            email="delete-race@example.com",
+            password_hash=hash_password("admin-pass-123"),
+            role=Role.ADMIN,
+        )
+        db.add(admin)
+        db.commit()
+        db.refresh(admin)
+        document, job = document_service.save_upload(
+            db,
+            data="计算题\n1+1=2".encode(),
+            original_name="计算题.txt",
+            mime_type="text/plain",
+            title="计算题",
+            category="测试",
+            uploaded_by=admin.id,
+            enqueue=False,
+        )
+        document_id = document.id
+        job_id = job.id
+
+    embedding_started = threading.Event()
+    release_embedding = threading.Event()
+
+    def delayed_embeddings(texts: list[str]) -> np.ndarray:
+        embedding_started.set()
+        assert release_embedding.wait(timeout=5)
+        vectors = np.zeros((len(texts), 8), dtype=np.float32)
+        vectors[:, 0] = 1.0
+        return vectors
+
+    monkeypatch.setattr(embedding.embedder, "embed_documents", delayed_embeddings)
+    worker = threading.Thread(
+        target=document_service.process,
+        args=(document_id, job_id),
+        daemon=True,
+    )
+    worker.start()
+    assert embedding_started.wait(timeout=5)
+
+    with SessionLocal() as db:
+        current = db.get(Document, document_id)
+        assert current is not None
+        document_service.delete_document(db, current)
+
+    release_embedding.set()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+
+    with SessionLocal() as db:
+        assert db.get(Document, document_id) is None
+    assert not index_manager.artifact_path(document_id).exists()
+    assert all(
+        record.document_id != document_id for record in index_manager.snapshot().records.values()
+    )

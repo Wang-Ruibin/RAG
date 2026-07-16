@@ -45,8 +45,9 @@ chunk 或 embedding。独立知识库位于 `data/knowledge_base`：每篇资料
 7. FAISS 索引和 manifest 先写临时文件再原子替换，成功后状态变为 `READY/COMPLETE`。
 
 Embedding 完成前不会替换重处理文档的旧知识工件；删除单篇只需移除对应工件并用已有
-向量重建全局索引，不重新调用其他文档的 Embedding。启动或 CLI 会从知识工件恢复
-FAISS/BM25；MySQL 的 `chunk_count` 只是管理页面统计，不是检索数据源。
+向量重建全局索引，不重新调用其他文档的 Embedding。启动时优先校验并加载持久化的
+`faiss.index` 和 manifest，再从知识工件恢复 BM25 与记录；索引缺失、损坏或与 NPZ 工件
+不一致时才原子重建 FAISS/BM25。MySQL 的 `chunk_count` 只是管理页面统计，不是检索数据源。
 
 ## 问答数据流
 
@@ -67,19 +68,21 @@ sequenceDiagram
         R->>R: BM25 Top20
     end
     R->>R: RRF Top12 + Rerank Top5
-    A-->>C: sources
-    A->>D: 受约束 Prompt + [S1..S5]
+    R->>R: 最低分 + 相对分差过滤弱相关项
+    A->>D: 受约束 Prompt + 最多 [S1..S5]
     loop token
         D-->>A: delta
         A-->>C: delta
     end
     A->>A: 校验并过滤引用编号
     A->>M: COMPLETE/CANCELLED/ERROR + 内容 + 来源
+    A-->>C: final sources
     A-->>C: done 或 error
 ```
 
 检索完成后不再持有索引锁。前端用 `fetch + ReadableStream` 发送 POST，问题不进入 URL。
-断流和取消都更新 assistant 消息状态，避免历史记录只留下空白占位。
+Cross-Encoder 分数仅用于排序和过滤，不解释为相似度概率。最终来源最多 5 条，弱相关
+候选不会发送到页面。断流和取消都更新 assistant 消息状态，避免历史记录只留下空白占位。
 
 ## 安全设计
 

@@ -16,6 +16,10 @@
 cd frontend && npm run lint && npm run test -- --run && npm run build
 ```
 
+2026-07-16 最新自动化验证：后端 Ruff 通过、26 个 pytest 全部通过；前端 ESLint、Vitest
+和生产构建通过。测试覆盖热上传文档标题、边界词法命中、上下文弱相关过滤、最终来源 SSE、
+知识库分页和会话状态持久化等回归场景。
+
 ## 真实评测
 
 先完成全量导入，再运行：
@@ -32,7 +36,8 @@ cd frontend && npm run lint && npm run test -- --run && npm run build
 `citation_gold_title_precision`，只是严格代理指标；相关补充来源可能支持答案却不匹配
 单一 gold 标题，不能直接当作人工事实—来源正确率。
 
-2026-07-15 的 CPU 实测采用 1,026 篇、3,867 个 chunk。最终精排参数为 5 个候选、
+2026-07-15 的 CPU 实测采用 1,026 篇、3,867 个 chunk。该历史基线不包含随后加入的
+`计算题.txt`，因此原始评测 JSON 不随当前 1,027/3,868 本机索引改写。最终精排参数为 5 个候选、
 最大长度 256；独立 FAISS 知识库重构后复跑结果为 Hit@5 0.950、MRR@5 0.919、
 P95 1.462 秒、知识库外误接受率 0%。完整结果与参数对比见 `evaluation_summary.md`。
 

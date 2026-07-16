@@ -62,9 +62,14 @@ Swagger：服务启动后访问 `/docs`。除 SSE 外，所有 JSON 使用：
   "source_url": "https://example.edu.cn/page",
   "published_at": "2026-01-01",
   "score": 0.91,
-  "snippet": "命中的原文片段"
+  "snippet": "命中的原文片段",
+  "citation_index": 1
 }
 ```
+
+`score` 是 Cross-Encoder 的内部排序分，不是经过校准的相似度概率，前端不显示百分比。
+后端只保留通过绝对分数和相对分差过滤的强相关来源，最多 5 条；`citation_index` 与回答
+中的 `[Sx]` 编号保持一致。
 
 ## SSE 事件
 
@@ -74,15 +79,21 @@ Swagger：服务启动后访问 `/docs`。除 SSE 外，所有 JSON 使用：
 event: start
 data: {"conversation_id":1,"message_id":2}
 
-event: sources
-data: {"items":[...],"low_confidence":false}
+event: status
+data: {"phase":"retrieval","message":"正在检索校园知识库…"}
 
 event: delta
 data: {"text":"报名时间为"}
 
+event: sources
+data: {"items":[...],"low_confidence":false,"final":true}
+
 event: done
 data: {"latency_ms":1234,"model":"deepseek-v4-flash"}
 ```
+
+正常回答只发送一次最终 `sources` 事件，位于文本增量之后、`done` 之前，避免把生成前的
+Top-K 弱相关候选误展示为引用来源。低置信拒答的 `items` 为空。
 
 异常事件为 `error`，包含稳定 `code` 和友好 `message`。浏览器主动中止时消息状态写为
 `CANCELLED`；上游或服务异常写为 `ERROR`。前端不能把问题放到 GET URL 中。

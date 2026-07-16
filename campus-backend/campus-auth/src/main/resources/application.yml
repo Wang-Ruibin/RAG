@@ -1,0 +1,35 @@
+server:
+  port: 9210
+
+spring:
+  application:
+    name: campus-auth
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+        namespace: public
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 123456
+
+# Sa-Token
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 86400
+  active-timeout: 1800
+  is-concurrent: true
+  is-share: true
+  token-style: tik
+  is-log: false
+  is-read-cookie: true
+  cookie-auto-fill-prefix: true
+  jwt-secret-key: campusQASecretKey2024abcdefghijk
+
+# 日志
+logging:
+  level:
+    com.campus.auth: debug

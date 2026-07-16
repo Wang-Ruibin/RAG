@@ -1,0 +1,482 @@
+// ============================================================
+// CampusQA 全局设计系统 v3 —— 「青绿山水」
+// 灵感：《千里江山图》石青石绿矿物色 × 宣纸暖白 × 朱砂印章
+// "河海"即江河湖海 —— 用青绿山水回应校名，而非又一套科技蓝紫
+// 显示字体：霞鹜文楷（LXGW WenKai Screen），正文保持无衬线
+// ============================================================
+
+// ---------- 设计令牌（Design Tokens） ----------
+:root {
+  // 品牌色：石绿 → 春山青 渐变体系
+  --accent: #0F9179;             // 主品牌色（石绿）
+  --accent-2: #52C79B;           // 渐变终点（春山青）
+  --accent-subtle: #E7F5F0;      // 极浅品牌色，选中态/背景微差
+  --seal: #C4472F;               // 朱砂（印章红，仅小面积点缀）
+  --grad: linear-gradient(135deg, #0E8C72 0%, #52C79B 100%);
+  --grad-soft: linear-gradient(135deg, rgba(15, 145, 121, 0.10), rgba(82, 199, 155, 0.12));
+  --ring: rgba(15, 145, 121, 0.18);   // 聚焦光环
+  --glow: 0 4px 14px rgba(14, 140, 114, 0.30);
+  --glow-lg: 0 6px 22px rgba(14, 140, 114, 0.40);
+
+  // 中性色：墨色 × 宣纸
+  --primary: #22302B;            // 主文字（墨绿黑）
+  --primary-light: #40514A;
+  --bg: #F5F6F1;                 // 全局背景（宣纸雾白，带一分青）
+  --bg-card: #FFFFFF;            // 卡片纯白
+  --bg-sidebar: #E9F2EA;         // 侧边栏浅苔绿（暗色模式下自动切换深色）
+  --sidebar-text: #52665C;       // 侧边栏文字（灰绿）
+  --sidebar-text-hover: #1E3A30; // 侧边栏文字 hover
+  --sidebar-hover: rgba(15, 145, 121, 0.08);  // 侧边栏条目 hover 底色
+  --sidebar-line: rgba(34, 48, 43, 0.08);     // 侧边栏分隔线
+  --bg-hover: #F6FAF7;           // 列表条目 hover
+  --border: #E4E8E0;             // 1px 极浅边框
+  --text-secondary: #6E7D76;     // 辅助文字（灰绿）
+  --shadow: 0 1px 3px rgba(34, 48, 43, 0.05), 0 4px 16px rgba(34, 48, 43, 0.04);
+  --shadow-md: 0 8px 28px rgba(34, 48, 43, 0.10);
+
+  // 字体
+  --font-display: 'LXGW WenKai Screen', 'Kaiti SC', 'STKaiti', 'KaiTi', serif;
+  --font-body: 'Inter', -apple-system, 'SF Pro Display', 'Noto Sans SC',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  // 状态色（仅用于圆点指示，不做大色块）
+  --dot-green: #10B981;
+  --dot-yellow: #F59E0B;
+  --dot-red: #EF4444;
+  --dot-gray: #94A3B8;
+
+  // 兼容旧变量名（页面里仍在引用）
+  --campus-primary: var(--accent);
+  --campus-bg: var(--bg);
+  --campus-border: var(--border);
+  --campus-header-bg: var(--bg-card);
+  --campus-card-bg: var(--bg-card);
+  --campus-sidebar-bg: var(--bg-sidebar);
+  --campus-sidebar-text: var(--text-secondary);
+  --campus-sidebar-active: var(--accent);
+
+  // ---------- Element Plus 主题映射 ----------
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: #57B29E;
+  --el-color-primary-light-5: #87C9BB;
+  --el-color-primary-light-7: #B7E0D7;
+  --el-color-primary-light-8: #CFEBE4;
+  --el-color-primary-light-9: #E7F5F0;
+  --el-color-primary-dark-2: #0C7461;
+  --el-text-color-primary: var(--primary);
+  --el-text-color-regular: var(--primary-light);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: var(--border);
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-bg-color: var(--bg-card);
+  --el-fill-color-light: var(--bg-hover);
+  --el-box-shadow-light: var(--shadow-md);
+}
+
+// ---------- 暗色模式：夜色山林 ----------
+html.dark {
+  --accent: #34BFA3;
+  --accent-2: #6FDCB4;
+  --accent-subtle: rgba(52, 191, 163, 0.14);
+  --seal: #D9634A;
+  --grad: linear-gradient(135deg, #2AAE8F 0%, #5AD6A8 100%);
+  --grad-soft: linear-gradient(135deg, rgba(52, 191, 163, 0.14), rgba(111, 220, 180, 0.12));
+  --ring: rgba(52, 191, 163, 0.25);
+  --glow: 0 4px 16px rgba(42, 174, 143, 0.35);
+  --glow-lg: 0 6px 24px rgba(42, 174, 143, 0.45);
+
+  --primary: #E3EFE9;
+  --primary-light: #BCCEC5;
+  --bg: #0A1411;
+  --bg-card: #101D18;
+  --bg-sidebar: #0B1915;
+  --sidebar-text: rgba(226, 240, 232, 0.65);
+  --sidebar-text-hover: #FFFFFF;
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-line: rgba(255, 255, 255, 0.08);
+  --bg-hover: #16261F;
+  --border: #23372E;
+  --text-secondary: #8CA096;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+  --el-color-primary-light-3: #2E9E86;
+  --el-color-primary-light-5: #256F5F;
+  --el-color-primary-light-7: #1C4F43;
+  --el-color-primary-light-8: #173F36;
+  --el-color-primary-light-9: rgba(52, 191, 163, 0.14);
+  --el-color-primary-dark-2: #56D0B3;
+  --el-bg-color: var(--bg-card);
+  --el-bg-color-overlay: var(--bg-card);
+  --el-fill-color-light: var(--bg-hover);
+  --el-fill-color-blank: var(--bg-card);
+}
+
+// ---------- 基础排版 ----------
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--primary-light);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5 {
+  color: var(--primary);
+  line-height: 1.2;
+}
+
+// 页面级标题用文楷，赋予整个后台书卷气
+.page-header h3,
+.chat-header h3,
+.el-dialog__title,
+.el-drawer__title {
+  font-family: var(--font-display);
+}
+
+::selection {
+  background: rgba(15, 145, 121, 0.20);
+}
+
+// 数字统一等宽对齐
+.tnum,
+.el-table,
+.el-pagination,
+.stat-number {
+  font-variant-numeric: tabular-nums;
+}
+
+// ---------- 滚动条 ----------
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+  &:hover { background: var(--text-secondary); }
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+// ---------- 全局入场动效 ----------
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+// ---------- 卡片：入场上浮 + 悬停轻抬 ----------
+.campus-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: var(--shadow);
+  transition: box-shadow 0.3s ease, transform 0.3s ease, border-color 0.3s ease;
+  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.06s;
+  &:hover {
+    box-shadow: var(--shadow-md);
+    border-color: rgba(15, 145, 121, 0.30);
+  }
+}
+
+// ---------- 页面标题：朱砂印点 + 文楷 ----------
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  h3 {
+    display: flex;
+    align-items: center;
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin: 0;
+    &::before {
+      content: '';
+      width: 10px;
+      height: 10px;
+      background: var(--seal);
+      border-radius: 3px;
+      transform: rotate(45deg);
+      margin-right: 12px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(196, 71, 47, 0.35);
+    }
+  }
+}
+
+// ---------- 搜索栏：入场先于卡片 ----------
+.search-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 16px 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+  animation: rise-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  .el-input, .el-select {
+    width: 200px;
+  }
+}
+
+// ---------- 状态圆点 ----------
+.cell-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--primary-light);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  &.dot--green  { background: var(--dot-green); }
+  &.dot--yellow { background: var(--dot-yellow); }
+  &.dot--red    { background: var(--dot-red); }
+  &.dot--gray   { background: var(--dot-gray); }
+  // 活跃状态呼吸动画
+  &.dot--pulse {
+    animation: dot-breathe 2.4s ease-in-out infinite;
+  }
+}
+@keyframes dot-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35); }
+  50%      { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+}
+
+// ---------- 键帽样式（快捷键提示） ----------
+.kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+// ---------- 页面切换：淡入 + 上浮 ----------
+.fade-enter-active {
+  transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.fade-leave-to {
+  opacity: 0;
+}
+
+// ============================================================
+// Element Plus 全局覆盖
+// ============================================================
+
+// 按钮：主按钮渐变 + 光晕，hover 轻抬
+.el-button {
+  transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  font-weight: 500;
+  border-radius: 10px;
+}
+.el-button:not(.is-link):not(.is-text):hover {
+  transform: translateY(-1px);
+}
+.el-button:not(.is-link):not(.is-text):active {
+  transform: translateY(0) scale(0.98);
+}
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain) {
+  background: var(--grad);
+  border: none;
+  box-shadow: var(--glow);
+  &:hover {
+    background: var(--grad);
+    box-shadow: var(--glow-lg);
+    filter: brightness(1.06);
+  }
+  &.is-disabled {
+    background: var(--grad);
+    opacity: 0.5;
+    box-shadow: none;
+  }
+}
+
+// 输入框：圆角 + 聚焦光环
+.el-input__wrapper,
+.el-textarea__inner {
+  border-radius: 10px;
+  transition: box-shadow 0.25s ease;
+}
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 3px var(--ring) !important;
+}
+
+// 表格：去线、列头大写小字、行 hover 平滑
+.el-table {
+  --el-table-border-color: var(--border);
+  --el-table-header-bg-color: transparent;
+  --el-table-row-hover-bg-color: var(--bg-hover);
+  --el-table-header-text-color: var(--text-secondary);
+  background: transparent;
+
+  th.el-table__cell {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    background: transparent;
+    padding: 10px 0;
+  }
+  td.el-table__cell {
+    padding: 13px 0;
+    transition: background-color 0.2s ease;
+  }
+  // 去斑马纹，仅保留极浅分割线
+  &.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+    background: transparent;
+  }
+  .el-table__empty-text {
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+}
+
+// 标签：品牌微渐变底
+.el-tag {
+  border-radius: 8px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+  &.el-tag--primary {
+    background: var(--grad-soft);
+    border-color: transparent;
+    color: var(--accent);
+  }
+}
+
+// 弹窗：大圆角 + 上浮入场
+.el-dialog {
+  border-radius: 18px;
+  box-shadow: var(--shadow-md);
+  animation: dialog-pop 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  .el-dialog__title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--primary);
+  }
+}
+@keyframes dialog-pop {
+  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+// 抽屉
+.el-drawer {
+  border-radius: 18px 0 0 18px;
+}
+
+// 下拉/浮层
+.el-popper.is-light {
+  border-radius: 12px;
+  border-color: var(--border);
+  box-shadow: var(--shadow-md);
+}
+.el-dropdown-menu__item:not(.is-disabled):hover {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.el-select-dropdown__item {
+  border-radius: 8px;
+  margin: 0 6px;
+  padding: 0 14px;
+  transition: all 0.15s ease;
+  &.is-hovering { background: var(--accent-subtle); }
+  &.is-selected { color: var(--accent); font-weight: 600; }
+}
+
+// 分页：当前页渐变
+.el-pagination {
+  --el-pagination-button-bg-color: transparent;
+  .el-pager li {
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    &.is-active {
+      background: var(--grad);
+      color: #fff;
+      box-shadow: var(--glow);
+    }
+  }
+}
+
+// 消息提示
+.el-message {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+}
+
+// 开关：开启态渐变
+.el-switch.is-checked .el-switch__core {
+  background: var(--grad);
+  border-color: transparent;
+}
+
+// 骨架屏呼吸色
+.el-skeleton {
+  --el-skeleton-color: var(--border);
+  --el-skeleton-to-color: var(--bg-hover);
+}
+
+// 描述列表
+.el-descriptions {
+  .el-descriptions__label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+  }
+}
+
+// 树形控件选中态
+.el-tree-node__content {
+  border-radius: 8px;
+  transition: background-color 0.15s ease;
+}
+
+// ---------- 无障碍：尊重系统减少动效 ----------
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

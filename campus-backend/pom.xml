@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.campus</groupId>
+    <artifactId>campus-backend</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+    <name>CampusQA Backend</name>
+    <description>校园知识问答助手 - 后端微服务</description>
+
+    <!-- 子模块 -->
+    <modules>
+        <!-- Common 公共模块 -->
+        <module>campus-common/campus-common-core</module>
+        <module>campus-common/campus-common-security</module>
+        <module>campus-common/campus-common-datasource</module>
+        <module>campus-common/campus-common-log</module>
+        <module>campus-common/campus-common-redis</module>
+        <module>campus-common/campus-common-swagger</module>
+        <!-- API 接口定义 -->
+        <module>campus-api/campus-api-system</module>
+        <module>campus-api/campus-api-knowledge</module>
+        <!-- 网关 -->
+        <module>campus-gateway</module>
+        <!-- 认证 -->
+        <module>campus-auth</module>
+        <!-- 业务模块 -->
+        <module>campus-modules/campus-system</module>
+        <module>campus-modules/campus-knowledge</module>
+        <module>campus-modules/campus-qa</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+        <spring-boot.version>3.3.5</spring-boot.version>
+        <spring-cloud.version>2023.0.3</spring-cloud.version>
+        <spring-cloud-alibaba.version>2023.0.1.0</spring-cloud-alibaba.version>
+        <sa-token.version>1.42.0</sa-token.version>
+        <mybatis-plus.version>3.5.7</mybatis-plus.version>
+        <hutool.version>5.8.29</hutool.version>
+        <knife4j.version>4.5.0</knife4j.version>
+        <fastjson2.version>2.0.51</fastjson2.version>
+        <mysql.version>8.0.33</mysql.version>
+        <campus.version>1.0.0</campus.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Spring Cloud BOM -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Spring Cloud Alibaba BOM -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Sa-Token -->
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-core</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-spring-boot3-starter</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-reactor-spring-boot3-starter</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-jwt</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-redis-jackson</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+            <!-- MyBatis-Plus -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <!-- MySQL -->
+            <dependency>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
+                <version>${mysql.version}</version>
+            </dependency>
+            <!-- Hutool -->
+            <dependency>
+                <groupId>cn.hutool</groupId>
+                <artifactId>hutool-all</artifactId>
+                <version>${hutool.version}</version>
+            </dependency>
+            <!-- Knife4j API文档 -->
+            <dependency>
+                <groupId>com.github.xiaoymin</groupId>
+                <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+                <version>${knife4j.version}</version>
+            </dependency>
+            <!-- FastJson2 -->
+            <dependency>
+                <groupId>com.alibaba.fastjson2</groupId>
+                <artifactId>fastjson2</artifactId>
+                <version>${fastjson2.version}</version>
+            </dependency>
+            <!-- 本项目的内部模块版本管理 -->
+            <dependency>
+                <groupId>com.campus</groupId>
+                <artifactId>campus-common-core</artifactId>
+                <version>${campus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.campus</groupId>
+                <artifactId>campus-common-security</artifactId>
+                <version>${campus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.campus</groupId>
+                <artifactId>campus-common-datasource</artifactId>
+                <version>${campus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.campus</groupId>
+                <artifactId>campus-common-log</artifactId>
+                <version>${campus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.campus</groupId>
+                <artifactId>campus-common-redis</artifactId>
+                <version>${campus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.campus</groupId>
+                <artifactId>campus-common-swagger</artifactId>
+                <version>${campus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.campus</groupId>
+                <artifactId>campus-api-system</artifactId>
+                <version>${campus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.campus</groupId>
+                <artifactId>campus-api-knowledge</artifactId>
+                <version>${campus.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                    <configuration>
+                        <release>17</release>
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>repackage</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

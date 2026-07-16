@@ -1,0 +1,63 @@
+server:
+  port: 19280
+
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  application:
+    name: campus-gateway
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 123456
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+        namespace: public
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        # Auth 认证服务
+        - id: campus-auth
+          uri: lb://campus-auth
+          predicates:
+            - Path=/auth/**
+        # System 系统服务
+        - id: campus-system
+          uri: lb://campus-system
+          predicates:
+            - Path=/system/**
+        # Knowledge 知识库服务
+        - id: campus-knowledge
+          uri: lb://campus-knowledge
+          predicates:
+            - Path=/knowledge/**
+        # QA 问答服务
+        - id: campus-qa
+          uri: lb://campus-qa
+          predicates:
+            - Path=/qa/**
+
+# Sa-Token 网关配置
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer        # 前端 Authorization header 带 "Bearer " 前缀，必须配置才能正确解析 JWT
+  timeout: 86400             # Token 有效期 24小时
+  active-timeout: 1800       # 30分钟无操作过期
+  is-concurrent: true        # 允许并发登录
+  is-share: true             # 多端共享
+  token-style: tik           # Token 风格
+  is-log: false
+  is-read-cookie: true       # 允许从 Cookie 读取 token（安全兜底）
+  cookie-auto-fill-prefix: true  # Cookie 值自动补 Bearer 前缀
+  jwt-secret-key: campusQASecretKey2024abcdefghijk
+
+# 日志
+logging:
+  level:
+    com.campus.gateway: debug

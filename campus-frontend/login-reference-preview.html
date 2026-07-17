@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>河海智问 - 登录复刻预览</title>
+  <style>
+    *{box-sizing:border-box}
+    html,body{width:100%;height:100%;margin:0;overflow:hidden}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#17253b;background:#f4f8fd}
+    button,input{font:inherit}
+    .page{display:grid;width:100vw;height:100vh;grid-template-columns:60.6% 39.4%;background:#f4f8fd}
+    .visual{position:relative;min-width:0;overflow:hidden;background:radial-gradient(circle at 50% 28%,rgba(255,255,255,.98),rgba(247,251,255,.88) 38%,rgba(230,242,255,.95) 100%)}
+    .visual:before{position:absolute;inset:0;content:"";background:linear-gradient(135deg,rgba(255,255,255,.82),transparent 43%),radial-gradient(circle at 82% 20%,rgba(126,181,242,.11),transparent 32%)}
+    .identity{position:absolute;top:5.8%;left:4.7%;z-index:4;display:flex;align-items:center;color:#0864d8}
+    .seal{width:clamp(72px,6.8vw,112px);height:clamp(72px,6.8vw,112px);flex:0 0 auto}
+    .university{display:flex;margin-left:18px;flex-direction:column}
+    .university strong{font-family:"STKaiti","KaiTi",serif;font-size:clamp(28px,3vw,49px);font-weight:700;line-height:1.05;letter-spacing:.08em;white-space:nowrap}
+    .university span{margin-top:7px;font-size:clamp(10px,.95vw,16px);letter-spacing:.035em;white-space:nowrap}
+    .divider{width:1px;height:clamp(64px,6vw,96px);margin:0 clamp(20px,2.2vw,36px);background:#7eafe9}
+    .product{display:flex;flex-direction:column}
+    .product strong{font-size:clamp(31px,3.2vw,54px);line-height:1.08;letter-spacing:.08em;white-space:nowrap}
+    .product span{margin-top:9px;font-size:clamp(14px,1.35vw,22px);letter-spacing:.09em;white-space:nowrap}
+    .slogan{position:absolute;top:30.7%;left:10%;z-index:4;display:flex;width:74%;align-items:center;justify-content:center;gap:20px;color:#1267cd}
+    .slogan i{width:66px;height:1px;background:linear-gradient(90deg,transparent,#72a9e8)}
+    .slogan i:last-child{background:linear-gradient(90deg,#72a9e8,transparent)}
+    .slogan span{font-family:"STKaiti","KaiTi",serif;font-size:clamp(18px,1.7vw,28px);letter-spacing:.16em;white-space:nowrap}
+    .campus{position:absolute;right:-1%;bottom:13%;z-index:2;width:104%;height:55%;color:#4d91e4;opacity:.39;filter:drop-shadow(0 8px 14px rgba(40,105,183,.06))}
+    .campus .fine{stroke-width:1.2}.campus .main{stroke-width:2}.campus text{font-family:"STKaiti","KaiTi",serif;fill:currentColor;font-size:18px;letter-spacing:5px}
+    .water{position:absolute;right:-8%;bottom:-14%;z-index:1;width:120%;height:46%;border-radius:50%;background:repeating-radial-gradient(ellipse at 45% 100%,transparent 0 36px,rgba(80,145,220,.10) 38px 40px,transparent 42px 71px);transform:rotate(-2deg)}
+    .features{position:absolute;right:6.7%;bottom:8.9%;left:6.7%;z-index:5;display:grid;gap:20px;grid-template-columns:repeat(3,1fr)}
+    .feature{display:flex;min-width:0;min-height:122px;align-items:center;gap:18px;padding:20px 24px;background:rgba(255,255,255,.91);border:1px solid rgba(95,151,216,.17);border-radius:14px;box-shadow:0 10px 27px rgba(33,89,153,.09)}
+    .feature svg{width:54px;height:54px;flex:0 0 auto;color:#0864d8}
+    .feature div{min-width:0}.feature strong{display:block;color:#0864d8;font-size:17px}.feature p{margin:7px 0 0;color:#627690;font-size:12px;line-height:1.75}
+    .panel{display:flex;min-width:0;align-items:flex-start;justify-content:center;padding:5.9vh 4.7%;background:linear-gradient(135deg,#f7faff,#f2f7fd)}
+    .card{width:min(568px,100%);min-height:min(718px,88.2vh);padding:30px clamp(28px,2.35vw,40px) 25px;background:#fff;border:1px solid #e0e9f4;border-radius:16px;box-shadow:0 14px 44px rgba(35,75,124,.13)}
+    .tabs{display:grid;height:54px;margin-bottom:28px;grid-template-columns:1fr 1fr;border-bottom:1px solid #dce5f0}
+    .tab{position:relative;color:#7d899b;background:none;border:0;cursor:pointer;font-size:19px;font-weight:700}
+    .tab.active{color:#0864d8}.tab.active:after{position:absolute;right:12%;bottom:-1px;left:12%;height:3px;content:"";background:#0864d8;border-radius:2px 2px 0 0}
+    .field{display:block;margin-bottom:24px}.field>span{display:block;margin-bottom:9px;color:#202d3e;font-size:14px;font-weight:700}.field>span b{margin-right:4px;color:#ef5c52}
+    .input-shell{display:flex;height:60px;align-items:center;padding:0 17px;background:#fff;border:1px solid #ccd8e7;border-radius:8px;transition:.2s}
+    .input-shell:focus-within{border-color:#0864d8;box-shadow:0 0 0 3px rgba(8,100,216,.1)}
+    .input-shell svg{width:21px;height:21px;flex:0 0 auto;margin-right:14px;color:#8796aa}
+    .input-shell input{width:100%;height:100%;color:#23344c;background:transparent;border:0;outline:0;font-size:14px}.input-shell input::placeholder{color:#a5b0c1}
+    .password .eye{width:22px;height:22px;margin:0 0 0 10px;color:#8190a4}
+    .captcha-line{display:grid;gap:10px;grid-template-columns:minmax(0,1fr) 132px 35px}.captcha{display:grid;height:60px;place-items:center;color:#254a7d;background:#fff;border:1px solid #d1dce9;border-radius:8px;font-family:Consolas,monospace;font-size:25px;letter-spacing:.17em}.refresh{display:grid;place-items:center;color:#75859a;background:none;border:0;cursor:pointer}.refresh svg{width:25px;height:25px}
+    .options{display:flex;align-items:center;justify-content:space-between;margin:-1px 0 25px;color:#3e4c60;font-size:14px}.remember{display:flex;align-items:center;gap:9px}.remember input{width:19px;height:19px;margin:0;accent-color:#0864d8}.forgot{color:#0864d8;background:none;border:0;cursor:pointer}
+    .primary,.secondary{width:100%;height:60px;border-radius:7px;cursor:pointer;font-size:18px;font-weight:600}.primary{color:#fff;background:linear-gradient(135deg,#0864d8,#1677e8);border:1px solid #0864d8;box-shadow:0 7px 16px rgba(8,100,216,.18)}.secondary{margin-top:16px;color:#0864d8;background:#fff;border:1px solid #0864d8}
+    .foot{margin:24px 0 0;color:#9babbe;font-size:12px;text-align:center}
+    @media(max-width:1180px){.page{grid-template-columns:58% 42%}.identity{left:4%}.features{right:4%;left:4%;gap:12px}.feature{padding:17px 15px}.feature p{font-size:11px}.card{min-height:auto}.field{margin-bottom:18px}.input-shell,.captcha{height:52px}.captcha-line{grid-template-columns:minmax(0,1fr) 112px 30px}.primary,.secondary{height:52px}.panel{padding-top:4vh}}
+    @media(max-width:900px){html,body{overflow:auto}.page{min-height:100vh;grid-template-columns:1fr}.visual{display:none}.panel{min-height:100vh;padding:28px 20px}.card{width:min(540px,100%);min-height:auto}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="visual">
+      <div class="identity">
+        <svg class="seal" viewBox="0 0 120 120" aria-label="河海大学校徽示意">
+          <g fill="none" stroke="#0864d8" stroke-width="2.2"><circle cx="60" cy="60" r="50"/><circle cx="60" cy="60" r="43"/><path d="M60 21l7 10 12-2-1 12 10 7-9 8 3 12-12 1-6 11-10-7-11 6-5-11-12-2 4-11-8-9 10-7V27l12 3z"/><circle cx="60" cy="56" r="19"/><path d="M46 54c10-10 19-10 29 0M46 61c10-8 19-8 29 0M51 68h19M60 37v36"/></g><text x="60" y="16" text-anchor="middle" fill="#0864d8" font-size="8">河 海 大 学</text><text x="60" y="108" text-anchor="middle" fill="#0864d8" font-size="6">HOHAI UNIVERSITY · 1915</text>
+        </svg>
+        <div class="university"><strong>河海大学</strong><span>HOHAI UNIVERSITY</span></div><i class="divider"></i><div class="product"><strong>河海智问</strong><span>校园知识智能问答平台</span></div>
+      </div>
+      <div class="slogan"><i></i><span>校园知识，可信赖，可追溯</span><i></i></div>
+      <svg class="campus" viewBox="0 0 1000 510" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <g class="fine"><path d="M0 426c120-22 205 9 324-5s242-3 342 6 213 3 334-13M0 444c145-14 266 15 405-2s278 4 595-8"/><path d="M36 407V226h67v181m-87-181h107l-18-25H37zM61 251h22v39H61zm0 55h22v39H61zM897 407V210h60v197m-75-197h91l-15-23h-61zM916 238h20v39h-20zm0 54h20v39h-20z"/><path d="M172 407V191h609v216M192 407V220h570v187M154 191h646l-63-40H212zM229 407V268h496v139M257 407V293h440v114M221 239h522M221 263h522M248 220v43m64-43v43m64-43v43m64-43v43m64-43v43m64-43v43m64-43v43m64-43v43M700 220v43"/><path d="M335 407v-92h279v92M365 407v-67h219v67M475 340v67M505 340v67"/><path d="M138 408c12-55 42-72 62 0m-92 0c8-35 28-50 46 0M760 408c16-59 50-70 70 0m-27 0c12-39 36-48 54 0M15 408c9-45 30-58 48 0M951 407c8-42 29-55 47 0"/><path d="M115 407c24-19 47-25 70-17m579 16c27-23 54-29 82-17M420 151v-37m0 0l42 11-42 11"/></g>
+          <g class="main"><path d="M285 407V177h388v230M270 177h418l-38-31H306zM315 407V238h328v169M337 407V262h284v145"/><path d="M325 205h308M350 177v61m55-61v61m55-61v61m55-61v61m55-61v61m55-61v61"/><path d="M385 407v-96h186v96M412 407v-68h132v68"/></g>
+          <path class="fine" d="M0 462c155-23 288 18 440-1s303 13 560-10M0 481c168-18 318 17 490-3s340 15 510-4"/>
+        </g><text x="500" y="290" text-anchor="middle">河 海 大 学</text>
+      </svg>
+      <div class="water"></div>
+      <div class="features">
+        <article class="feature"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 24l26-13 26 13-26 13z"/><path d="M16 30v17c10 8 22 8 32 0V30M55 26v20"/><path d="M51 49h8"/></svg><div><strong>校园知识</strong><p>汇聚河海权威知识资源<br>覆盖教学、科研与管理</p></div></article>
+        <article class="feature"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="10" y="8" width="37" height="48" rx="4"/><path d="M18 20h20M18 29h20M18 38h12"/><circle cx="47" cy="45" r="10"/><path d="M43 45l3 3 6-7"/></svg><div><strong>可信引用</strong><p>来源权威，引用规范<br>知识可信，过程可追溯</p></div></article>
+        <article class="feature"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="28" cy="28" r="18"/><path d="M42 42l15 15"/></svg><div><strong>智能检索</strong><p>语义理解，精准匹配<br>智能问答，高效获取</p></div></article>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="card">
+        <div class="tabs"><button class="tab active">登录</button><button class="tab">注册</button></div>
+        <label class="field"><span><b>*</b>用户名</span><div class="input-shell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 4-7 8-7s7 2 8 7"/></svg><input placeholder="请输入用户名"></div></label>
+        <label class="field"><span><b>*</b>密码</span><div class="input-shell password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg><input type="password" placeholder="请输入密码"><svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg></div></label>
+        <label class="field"><span><b>*</b>图形验证码</span><div class="captcha-line"><div class="input-shell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3 8-8 10-5-2-8-5-8-10V7z"/><path d="M9 12l2 2 4-5"/></svg><input placeholder="请输入图形验证码"></div><div class="captcha">8 3 K 7</div><button class="refresh" title="刷新验证码"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11a8 8 0 1 0-2 5M20 4v7h-7"/></svg></button></div></label>
+        <div class="options"><label class="remember"><input type="checkbox">记住我</label><button class="forgot">忘记密码？</button></div>
+        <button class="primary">登录</button><button class="secondary">立即注册</button><p class="foot">河海大学校园知识智能问答平台</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

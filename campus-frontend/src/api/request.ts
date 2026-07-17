@@ -21,7 +21,9 @@ request.interceptors.response.use(
   response => {
     const { data } = response
     if (response.config.responseType === 'blob') return response
-    if (data.code !== 200) {
+    const businessCode = Number(data?.code)
+    const isSuccess = Number.isFinite(businessCode) && businessCode >= 200 && businessCode < 300
+    if (!isSuccess) {
       ElMessage.error(data.msg || data.message || '请求失败')
       return Promise.reject(new Error(data.msg || data.message))
     }

@@ -22,22 +22,30 @@ request.interceptors.response.use(
     const { data } = response
     if (response.config.responseType === 'blob') return response
     if (data.code !== 200) {
-      ElMessage.error(data.msg || '请求失败')
-      return Promise.reject(new Error(data.msg))
+      ElMessage.error(data.msg || data.message || '请求失败')
+      return Promise.reject(new Error(data.msg || data.message))
     }
     return data
   },
   error => {
     if (error.response) {
       const { status } = error.response
+      const url: string = error.config?.url || ''
       if (status === 401) {
+        // QA / 知识库走 Python 后端，401 不强制跳登录
+        if (url.startsWith('/qa/') || url.startsWith('/qa') || url.startsWith('/knowledge/') || url.startsWith('/knowledge')) {
+          return Promise.reject(error)
+        }
         ElMessage.error('登录已过期，请重新登录')
         removeToken()
         window.location.href = '/login'
       } else if (status === 403) {
         ElMessage.error('权限不足')
       } else {
-        ElMessage.error(`服务器错误: ${status}`)
+        // Python 后端错误信息在 detail（FastAPI HTTPException）或 message，Java 侧在 msg
+        const data = error.response.data
+        const serverMsg = data?.detail || data?.message || data?.msg
+        ElMessage.error(serverMsg || `服务器错误: ${status}`)
       }
     } else {
       ElMessage.error('网络异常，请检查连接')

@@ -17,6 +17,8 @@ spring:
         server-addr: localhost:8848
         namespace: public
     gateway:
+      httpclient:
+        response-timeout: 600s     # SSE 流式长连接，10分钟超时
       discovery:
         locator:
           enabled: true
@@ -32,16 +34,26 @@ spring:
           uri: lb://campus-system
           predicates:
             - Path=/system/**
-        # Knowledge 知识库服务
-        - id: campus-knowledge
-          uri: lb://campus-knowledge
-          predicates:
-            - Path=/knowledge/**
-        # QA 问答服务
-        - id: campus-qa
-          uri: lb://campus-qa
+        # Python QA 问答（SSE流式 + 会话管理）
+        - id: python-qa
+          uri: http://localhost:8000
           predicates:
             - Path=/qa/**
+          filters:
+            - RewritePath=/qa/(?<segment>.*), /api/$\{segment}
+        # Python 文档管理（知识库）
+        - id: python-knowledge-list
+          uri: http://localhost:8000
+          predicates:
+            - Path=/knowledge
+          filters:
+            - SetPath=/api/documents
+        - id: python-knowledge-detail
+          uri: http://localhost:8000
+          predicates:
+            - Path=/knowledge/**
+          filters:
+            - RewritePath=/knowledge/(?<segment>.*), /api/documents/$\{segment}
 
 # Sa-Token 网关配置
 sa-token:

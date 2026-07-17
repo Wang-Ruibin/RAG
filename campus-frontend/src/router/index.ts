@@ -23,15 +23,13 @@ const router = createRouter({
         },
         {
           path: 'knowledge/category',
-          name: 'KnowledgeCategory',
-          component: () => import('@/views/knowledge/category/index.vue'),
-          meta: { title: '分类管理', icon: 'Files' }
+          redirect: '/knowledge/document'  // 分类功能已迁移至 Python，重定向到文档管理
         },
         {
           path: 'knowledge/document',
           name: 'KnowledgeDocument',
           component: () => import('@/views/knowledge/document/index.vue'),
-          meta: { title: '文档管理', icon: 'Document' }
+          meta: { title: '知识库管理', icon: 'Document' }
         },
         {
           path: 'system/user',

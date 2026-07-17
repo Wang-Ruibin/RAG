@@ -1,44 +1,47 @@
 import request from './request'
-import type { R, PageResult, KnowledgeCategory, KnowledgeDocument } from '@/types'
+import type { R, CampusDocument } from '@/types'
 
-// 分类
-export function listCategory(): Promise<R<KnowledgeCategory[]>> {
-  return request.get('/knowledge/category/list')
+// ========== 文档管理（Python 后端） ==========
+
+export interface DocumentListParams {
+  page?: number
+  size?: number
+  q?: string
 }
 
-export function categoryTree(): Promise<R<KnowledgeCategory[]>> {
-  return request.get('/knowledge/category/tree')
+export interface DocumentListResult {
+  items: CampusDocument[]
+  total: number
 }
 
-export function addCategory(data: KnowledgeCategory): Promise<R<void>> {
-  return request.post('/knowledge/category', data)
+/** 文档列表（分页 + 搜索） */
+export function listDocuments(params: DocumentListParams): Promise<R<DocumentListResult>> {
+  return request.get('/knowledge', { params })
 }
 
-export function updateCategory(data: KnowledgeCategory): Promise<R<void>> {
-  return request.put('/knowledge/category', data)
+/** 获取文档详情 */
+export function getDocument(id: number): Promise<R<CampusDocument>> {
+  return request.get(`/knowledge/${id}`)
 }
 
-export function deleteCategories(ids: number[]): Promise<R<void>> {
-  return request.delete(`/knowledge/category/${ids.join(',')}`)
+/** 上传文档（FormData） */
+export function uploadDocument(form: FormData): Promise<R<CampusDocument>> {
+  return request.post('/knowledge', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
 }
 
-// 文档
-export function listDocument(params: any): Promise<R<PageResult<KnowledgeDocument>>> {
-  return request.get('/knowledge/document/list', { params })
+/** 更新文档元数据 */
+export function updateDocument(id: number, data: { title: string; category: string; source_url?: string; published_at?: string }): Promise<R<CampusDocument>> {
+  return request.patch(`/knowledge/${id}`, data)
 }
 
-export function getDocument(docId: number): Promise<R<KnowledgeDocument>> {
-  return request.get(`/knowledge/document/${docId}`)
+/** 删除文档 */
+export function deleteDocument(id: number): Promise<R<void>> {
+  return request.delete(`/knowledge/${id}`)
 }
 
-export function addDocument(data: KnowledgeDocument): Promise<R<void>> {
-  return request.post('/knowledge/document', data)
-}
-
-export function updateDocument(data: KnowledgeDocument): Promise<R<void>> {
-  return request.put('/knowledge/document', data)
-}
-
-export function deleteDocuments(ids: number[]): Promise<R<void>> {
-  return request.delete(`/knowledge/document/${ids.join(',')}`)
+/** 重新索引文档 */
+export function reindexDocument(id: number): Promise<R<void>> {
+  return request.post(`/knowledge/${id}/reindex`)
 }

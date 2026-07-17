@@ -51,7 +51,7 @@ export interface SysMenu {
   children?: SysMenu[]
 }
 
-// 知识分类
+// 知识分类（Java 退役后删除）
 export interface KnowledgeCategory {
   categoryId: number
   parentId: number
@@ -62,7 +62,7 @@ export interface KnowledgeCategory {
   docCount?: number
 }
 
-// 知识文档
+// 知识文档（旧 Java 模型，保留兼容）
 export interface KnowledgeDocument {
   docId: number
   title: string
@@ -74,6 +74,67 @@ export interface KnowledgeDocument {
   viewCount: number
   createTime: string
   updateTime: string
+}
+
+// ========== Python RAG 模型（新） ==========
+
+// 对话会话
+export interface Conversation {
+  id: number
+  title: string
+  message_count: number
+  created_at: string
+  updated_at: string
+  messages?: ChatMessage[]
+}
+
+// 聊天消息
+export interface ChatMessage {
+  id?: number
+  role: 'USER' | 'ASSISTANT'
+  content: string
+  sources: SourceRef[]
+  status?: 'STREAMING' | 'COMPLETE' | 'CANCELLED' | 'ERROR'
+  latency_ms?: number | null
+}
+
+// 引用来源
+export interface SourceRef {
+  chunk_id: number
+  document_id: number
+  title: string
+  source_url?: string | null
+  published_at?: string | null
+  score: number
+  snippet: string
+  citation_index?: number
+}
+
+// 知识库文档（Python 模型）
+export interface CampusDocument {
+  id: number
+  title: string
+  original_name: string
+  mime_type: string
+  size: number
+  category: string
+  source_url?: string | null
+  published_at?: string | null
+  status: 'QUEUED' | 'PROCESSING' | 'READY' | 'FAILED' | 'DELETING'
+  stage: string
+  error?: string | null
+  chunk_count: number
+  uploaded_by?: number
+  created_at: string
+  updated_at: string
+}
+
+// Python 统一响应信封
+export interface Envelope<T> {
+  code: number
+  message: string
+  data: T
+  timestamp?: string
 }
 
 // 系统日志

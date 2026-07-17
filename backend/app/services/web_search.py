@@ -9,6 +9,8 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from ddgs import DDGS
+from ddgs.exceptions import DDGSException, RatelimitException, TimeoutException
 
 from app.core.config import settings
 
@@ -66,6 +68,65 @@ class DisabledWebSearchProvider(WebSearchProvider):
         return []
 
 
+class FreeWebSearchProvider(WebSearchProvider):
+    def search(self, query: str) -> list[WebSearchResult]:
+        try:
+            references = DDGS(timeout=max(1, settings.free_search_timeout_seconds)).text(
+                query,
+                region=settings.free_search_region,
+                safesearch=settings.free_search_safe_search,
+                timelimit=settings.free_search_time_limit,
+                max_results=max(1, min(settings.free_search_max_results, 20)),
+                backend=settings.free_search_backend,
+            )
+        except TimeoutException as exc:
+            raise WebSearchError(
+                WebSearchErrorKind.TIMEOUT,
+                "Free web search timed out",
+            ) from exc
+        except RatelimitException as exc:
+            raise WebSearchError(
+                WebSearchErrorKind.QUOTA,
+                "Free web search was rate limited",
+            ) from exc
+        except DDGSException as exc:
+            if "no results found" in str(exc).lower():
+                return []
+            raise WebSearchError(
+                WebSearchErrorKind.SERVICE,
+                "Free web search request failed",
+            ) from exc
+
+        results: list[WebSearchResult] = []
+        seen_urls: set[str] = set()
+        for item in references:
+            if not isinstance(item, dict):
+                continue
+            url = _normalize_url(str(item.get("href") or item.get("url") or ""))
+            if not url or url in seen_urls:
+                continue
+            snippet = _clean_text(str(item.get("body") or item.get("snippet") or ""))
+            if not snippet:
+                continue
+            seen_urls.add(url)
+            domain = urlparse(url).netloc.lower()
+            title = _clean_text(str(item.get("title") or "")) or domain
+            snippet = _limit_text(snippet, max(1, settings.web_search_snippet_max_chars))
+            results.append(
+                WebSearchResult(
+                    title=title,
+                    url=url,
+                    snippet=snippet,
+                    content=snippet,
+                    site_name=domain,
+                    domain=domain,
+                    published_at=None,
+                    citation_index=len(results) + 1,
+                )
+            )
+        return results[: settings.free_search_max_results]
+
+
 class BaiduWebSearchProvider(WebSearchProvider):
     search_source = "baidu_search_v2"
 
@@ -73,6 +134,13 @@ class BaiduWebSearchProvider(WebSearchProvider):
         self._client: httpx.Client | None = None
 
     def search(self, query: str) -> list[WebSearchResult]:
+        api_key, auth_header = self._credentials()
+        response = self._post(query, api_key, auth_header)
+        data = self._response_payload(response)
+        return self._normalize_results(self._references(data))
+
+    @staticmethod
+    def _credentials() -> tuple[str, str]:
         api_key = settings.baidu_search_api_key.get_secret_value()
         if not api_key:
             raise WebSearchError(
@@ -85,33 +153,14 @@ class BaiduWebSearchProvider(WebSearchProvider):
                 WebSearchErrorKind.CONFIGURATION,
                 "BAIDU_SEARCH_AUTH_HEADER is empty",
             )
+        return api_key, auth_header
 
-        payload: dict[str, Any] = {
-            "messages": [{"role": "user", "content": query}],
-            "search_source": self.search_source,
-            "resource_type_filter": [
-                {"type": "web", "top_k": max(1, min(settings.baidu_search_max_results, 50))}
-            ],
-            "safe_search": settings.baidu_search_safe_search,
-            "stream": False,
-        }
-        if settings.baidu_search_recency_filter:
-            payload["search_recency_filter"] = settings.baidu_search_recency_filter
-        if settings.baidu_search_match_site:
-            payload["search_filter"] = {"match": {"site": settings.baidu_search_match_site}}
-        blocked = [
-            item.strip()
-            for item in settings.baidu_search_block_websites.split(",")
-            if item.strip()
-        ]
-        if blocked:
-            payload["block_websites"] = blocked
-
+    def _post(self, query: str, api_key: str, auth_header: str) -> httpx.Response:
         try:
             response = self._get_client().post(
                 self._url(),
                 headers={auth_header: f"Bearer {api_key}"},
-                json=payload,
+                json=self._payload(query),
             )
         except httpx.TimeoutException as exc:
             raise WebSearchError(
@@ -123,7 +172,35 @@ class BaiduWebSearchProvider(WebSearchProvider):
                 WebSearchErrorKind.SERVICE,
                 "Baidu web search request failed",
             ) from exc
+        self._raise_for_status(response)
+        return response
 
+    @staticmethod
+    def _payload(query: str) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "messages": [{"role": "user", "content": query}],
+            "search_source": BaiduWebSearchProvider.search_source,
+            "resource_type_filter": [
+                {"type": "web", "top_k": max(1, min(settings.baidu_search_max_results, 50))}
+            ],
+            "safe_search": settings.baidu_search_safe_search,
+            "stream": False,
+        }
+        if settings.baidu_search_recency_filter:
+            payload["search_recency_filter"] = settings.baidu_search_recency_filter
+        if settings.baidu_search_match_site:
+            payload["search_filter"] = {
+                "match": {"site": [settings.baidu_search_match_site.strip()]}
+            }
+        blocked = [
+            item.strip() for item in settings.baidu_search_block_websites.split(",") if item.strip()
+        ]
+        if blocked:
+            payload["block_websites"] = blocked
+        return payload
+
+    @staticmethod
+    def _raise_for_status(response: httpx.Response) -> None:
         if response.status_code in {401, 403}:
             raise WebSearchError(
                 WebSearchErrorKind.AUTHENTICATION,
@@ -141,10 +218,12 @@ class BaiduWebSearchProvider(WebSearchProvider):
             )
         if response.status_code >= 400:
             raise WebSearchError(
-                self._classify_error(response),
+                BaiduWebSearchProvider._classify_error(response),
                 f"Baidu web search returned HTTP {response.status_code}",
             )
 
+    @classmethod
+    def _response_payload(cls, response: httpx.Response) -> dict[str, Any]:
         try:
             data = response.json()
         except ValueError as exc:
@@ -152,15 +231,23 @@ class BaiduWebSearchProvider(WebSearchProvider):
                 WebSearchErrorKind.SERVICE,
                 "Baidu web search returned invalid JSON",
             ) from exc
+        if not isinstance(data, dict):
+            raise WebSearchError(
+                WebSearchErrorKind.SERVICE,
+                "Baidu web search returned malformed JSON",
+            )
 
         code = data.get("code")
         if code not in (None, 0, "0"):
             message = str(data.get("message") or "")
             raise WebSearchError(
-                self._classify_message(message),
+                cls._classify_message(message),
                 message or "Baidu web search error",
             )
+        return data
 
+    @staticmethod
+    def _references(data: dict[str, Any]) -> list[Any]:
         references = data.get("references")
         if references is None and isinstance(data.get("data"), dict):
             references = data["data"].get("references")
@@ -171,7 +258,7 @@ class BaiduWebSearchProvider(WebSearchProvider):
                 WebSearchErrorKind.SERVICE,
                 "Baidu web search references malformed",
             )
-        return self._normalize_results(references)
+        return references
 
     def _get_client(self) -> httpx.Client:
         if self._client is None:
@@ -258,6 +345,8 @@ class BaiduWebSearchProvider(WebSearchProvider):
 def get_web_search_provider() -> WebSearchProvider:
     if not settings.web_search_enabled:
         return DisabledWebSearchProvider()
+    if settings.web_search_provider == "free":
+        return FreeWebSearchProvider()
     if settings.web_search_provider == "baidu":
         return BaiduWebSearchProvider()
     raise WebSearchError(

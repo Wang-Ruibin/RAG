@@ -4,16 +4,17 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.core.responses import success
 from app.models.enums import DocumentStatus
 from app.models.orm import Document
-from app.models.schemas import DocumentOut, DocumentUpdateRequest
+from app.models.schemas import DocumentOut, DocumentPreviewOut, DocumentUpdateRequest
 from app.services.documents import DuplicateDocumentError, document_service
 
-from .dependencies import AdminUser, Database
+from .dependencies import AdminUser, CurrentUser, Database
 
 router = APIRouter(prefix="/api/documents", tags=["知识库"])
 
@@ -30,7 +31,7 @@ async def upload_document(
     title: Annotated[str, Form()] = "",
     category: Annotated[str, Form()] = "其他",
 ) -> dict[str, object]:
-    original_name = Path(file.filename or "").name
+    original_name = Path((file.filename or "").replace("\\", "/")).name
     suffix = Path(original_name).suffix.lower()
     if suffix not in settings.allowed_extensions:
         raise HTTPException(status_code=400, detail="仅支持 Markdown、TXT、PDF、DOCX 文件")
@@ -61,7 +62,7 @@ async def upload_document(
 @router.get("")
 def list_documents(
     db: Database,
-    _admin: AdminUser,
+    _user: CurrentUser,
     page: int = 1,
     size: int = 20,
     q: str = "",
@@ -96,11 +97,54 @@ def list_documents(
 
 
 @router.get("/{document_id}")
-def get_document(document_id: int, db: Database, _admin: AdminUser) -> dict[str, object]:
+def get_document(document_id: int, db: Database, _user: CurrentUser) -> dict[str, object]:
     document = db.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="文档不存在")
     return success(serialize(document))
+
+
+@router.get("/{document_id}/preview")
+def preview_document(
+    document_id: int,
+    db: Database,
+    _user: CurrentUser,
+    offset: int = 0,
+    limit: int = 20_000,
+) -> dict[str, object]:
+    document = db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    offset = max(0, offset)
+    limit = min(max(1, limit), 50_000)
+    try:
+        text, preview_format = document_service.preview_text(document)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"文档预览失败: {exc}") from exc
+    total = len(text)
+    payload = DocumentPreviewOut(
+        content=text[offset : offset + limit],
+        offset=offset,
+        limit=limit,
+        total_chars=total,
+        has_more=offset + limit < total,
+        format=preview_format,
+    )
+    return success(payload.model_dump(mode="json"))
+
+
+@router.get("/{document_id}/download")
+def download_document(document_id: int, db: Database, _user: CurrentUser) -> FileResponse:
+    document = db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    try:
+        path = document_service.source_path(document)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(path, media_type=document.mime_type, filename=document.original_name)
 
 
 @router.patch("/{document_id}")

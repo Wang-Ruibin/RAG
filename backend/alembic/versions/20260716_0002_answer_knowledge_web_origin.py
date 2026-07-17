@@ -105,4 +105,3 @@ def downgrade() -> None:
                 if "ix_messages_answer_origin" in message_indexes:
                     batch_op.drop_index("ix_messages_answer_origin")
                 batch_op.drop_column("answer_origin")
-

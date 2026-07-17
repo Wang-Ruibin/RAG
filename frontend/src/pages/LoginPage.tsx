@@ -41,7 +41,7 @@ export function LoginPage() {
         <Segmented
           block
           value={mode}
-          options={[{ label: '登录', value: 'login' }, { label: '学生注册', value: 'register' }]}
+          options={[{ label: '登录', value: 'login' }, { label: '普通用户注册', value: 'register' }]}
           onChange={(value) => setMode(value as 'login' | 'register')}
         />
         {error && <Alert type="error" message={error} showIcon closable onClose={() => setError('')} />}

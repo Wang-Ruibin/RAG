@@ -1,11 +1,48 @@
-import { BookOutlined, DeleteOutlined, PlusOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Input, List, Popconfirm, Space, Spin, Tag, Typography, message } from 'antd'
+import { CopyOutlined, DeleteOutlined, DislikeOutlined, LikeOutlined, PlusOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { Alert, Button, Input, List, Popconfirm, Space, Spin, Tag, Tooltip, Typography, message } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../lib/api'
 import { streamChat, type SSEEvent } from '../lib/sse'
-import type { AnswerKnowledgeTask, ChatMessage, Conversation, SourceRef } from '../types'
+import type { AnswerCorrection, AnswerKnowledgeTask, ChatMessage, Conversation, SourceRef } from '../types'
 import { SourceCards } from '../components/SourceCards'
+
+const WELCOME_MESSAGES = [
+  '你好，我是河海智答，专门帮助你了解河海大学。想先了解学校概况、招生信息，还是校园生活？',
+  '欢迎来到河海智答！我是你的河海大学校园知识助手，有什么关于河海大学的问题都可以问我。',
+  '你好呀，我是河海智答。我可以帮你查询河海大学的院系、招生、校史和校园服务等信息。',
+  '很高兴见到你！我是河海大学校园知识助手“河海智答”，请告诉我你想了解什么。',
+]
+const TASK_STATUS_PRESENTATION: Record<AnswerKnowledgeTask['status'], { text: string; color: string }> = {
+  QUEUED: { text: '知识库排队中', color: 'gold' },
+  PROCESSING: { text: '知识库处理中', color: 'blue' },
+  COMPLETE: { text: '已加入知识库', color: 'green' },
+  FAILED: { text: '加入知识库失败', color: 'red' },
+}
+const CORRECTION_STATUS_PRESENTATION: Record<AnswerCorrection['status'], { text: string; color: string }> = {
+  PENDING: { text: '纠错待审核', color: 'gold' },
+  PROCESSING: { text: '纠错入库中', color: 'blue' },
+  APPROVED: { text: '纠错已采纳', color: 'green' },
+  REJECTED: { text: '纠错已拒绝', color: 'red' },
+  FAILED: { text: '纠错入库失败', color: 'red' },
+}
+
+function randomWelcomeMessage(previous?: string) {
+  const candidates = previous
+    ? WELCOME_MESSAGES.filter((item) => item !== previous)
+    : WELCOME_MESSAGES
+  return candidates[Math.floor(Math.random() * candidates.length)]
+}
+
+function updateLastMessage(
+  messages: ChatMessage[],
+  update: (message: ChatMessage) => ChatMessage,
+) {
+  if (messages.length === 0) return messages
+  const next = [...messages]
+  next[next.length - 1] = update(next[next.length - 1])
+  return next
+}
 
 export function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -17,6 +54,10 @@ export function ChatPage() {
   const [streamError, setStreamError] = useState('')
   const [streamStatus, setStreamStatus] = useState('')
   const [knowledgeSubmitting, setKnowledgeSubmitting] = useState<Set<number>>(new Set())
+  const [correctionSubmitting, setCorrectionSubmitting] = useState<Set<number>>(new Set())
+  const [correctingMessageId, setCorrectingMessageId] = useState<number | null>(null)
+  const [correctionDraft, setCorrectionDraft] = useState('')
+  const [welcomeMessage, setWelcomeMessage] = useState(() => randomWelcomeMessage())
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const deletingConversationIds = useRef(new Set<number>())
@@ -49,34 +90,37 @@ export function ChatPage() {
       const id = Number(event.data.conversation_id)
       const messageId = Number(event.data.message_id)
       setActiveId(id)
-      setMessages((current) => current.map((item, index) =>
-        index === current.length - 1 && Number.isFinite(messageId) ? { ...item, id: messageId } : item,
-      ))
+      if (Number.isFinite(messageId)) {
+        setMessages((current) => updateLastMessage(current, (item) => ({ ...item, id: messageId })))
+      }
     } else if (event.event === 'status') {
       setStreamStatus(String(event.data.message || '正在处理…'))
     } else if (event.event === 'sources') {
       const sources = (event.data.items || []) as SourceRef[]
       const answer_origin = event.data.answer_origin as ChatMessage['answer_origin']
-      setMessages((current) => current.map((item, index) =>
-        index === current.length - 1 ? { ...item, sources, answer_origin: answer_origin ?? item.answer_origin } : item,
-      ))
+      setMessages((current) => updateLastMessage(current, (item) => ({
+        ...item,
+        sources,
+        answer_origin: answer_origin ?? item.answer_origin,
+      })))
     } else if (event.event === 'delta') {
       const text = String(event.data.text || '')
-      setMessages((current) => current.map((item, index) =>
-        index === current.length - 1 ? { ...item, content: item.content + text } : item,
-      ))
+      setMessages((current) => updateLastMessage(current, (item) => ({
+        ...item,
+        content: item.content + text,
+      })))
     } else if (event.event === 'done') {
       setStreamStatus('')
       const answer_origin = event.data.answer_origin as ChatMessage['answer_origin']
-      setMessages((current) => current.map((item, index) =>
-        index === current.length - 1 ? { ...item, status: 'COMPLETE', answer_origin: answer_origin ?? item.answer_origin } : item,
-      ))
+      setMessages((current) => updateLastMessage(current, (item) => ({
+        ...item,
+        status: 'COMPLETE',
+        answer_origin: answer_origin ?? item.answer_origin,
+      })))
     } else if (event.event === 'error') {
       setStreamStatus('')
       setStreamError(String(event.data.message || '回答生成失败'))
-      setMessages((current) => current.map((item, index) =>
-        index === current.length - 1 ? { ...item, status: 'ERROR' } : item,
-      ))
+      setMessages((current) => updateLastMessage(current, (item) => ({ ...item, status: 'ERROR' })))
     }
   }
 
@@ -99,9 +143,7 @@ export function ChatPage() {
       await loadConversations()
     } catch (reason) {
       const status = controller.signal.aborted ? 'CANCELLED' : 'ERROR'
-      setMessages((current) => current.map((item, index) =>
-        index === current.length - 1 ? { ...item, status } : item,
-      ))
+      setMessages((current) => updateLastMessage(current, (item) => ({ ...item, status })))
       if (!controller.signal.aborted) {
         setStreamError(reason instanceof Error ? reason.message : '连接中断')
       }
@@ -117,7 +159,11 @@ export function ChatPage() {
     deletingConversationIds.current.add(id)
     try {
       await api(`/api/conversations/${id}`, { method: 'DELETE' })
-      if (activeId === id) { setActiveId(null); setMessages([]) }
+      if (activeId === id) {
+        setActiveId(null)
+        setMessages([])
+        setWelcomeMessage((current) => randomWelcomeMessage(current))
+      }
       await loadConversations()
       void message.success('会话已删除')
     } finally {
@@ -148,14 +194,58 @@ export function ChatPage() {
     }
   }
 
-  function taskTag(task: AnswerKnowledgeTask) {
-    const mapping: Record<AnswerKnowledgeTask['status'], { text: string; color: string }> = {
-      QUEUED: { text: '知识库排队中', color: 'gold' },
-      PROCESSING: { text: '知识库处理中', color: 'blue' },
-      COMPLETE: { text: '已加入知识库', color: 'green' },
-      FAILED: { text: '加入知识库失败', color: 'red' },
+  async function copyAnswer(content: string) {
+    try {
+      await navigator.clipboard.writeText(content)
+      void message.success('回答已复制')
+    } catch {
+      void message.error('复制失败，请手动选择文本')
     }
-    return <Tag color={mapping[task.status].color}>{mapping[task.status].text}</Tag>
+  }
+
+  function startCorrection(item: ChatMessage) {
+    if (!item.id) return
+    setCorrectingMessageId(item.id)
+    setCorrectionDraft(item.correction?.proposed_answer || '')
+  }
+
+  async function submitCorrection(item: ChatMessage) {
+    if (!item.id || correctionSubmitting.has(item.id) || !correctionDraft.trim()) return
+    setCorrectionSubmitting((current) => new Set(current).add(item.id as number))
+    try {
+      const correction = await api<AnswerCorrection>(`/api/messages/${item.id}/correction`, {
+        method: 'POST',
+        body: JSON.stringify({ corrected_answer: correctionDraft.trim() }),
+      })
+      setMessages((current) => current.map((messageItem) =>
+        messageItem.id === item.id ? { ...messageItem, correction } : messageItem,
+      ))
+      setCorrectingMessageId(null)
+      setCorrectionDraft('')
+      void message.success('纠错已提交，等待管理员审核')
+    } catch (reason) {
+      void message.error(reason instanceof Error ? reason.message : '纠错提交失败')
+    } finally {
+      setCorrectionSubmitting((current) => {
+        const next = new Set(current)
+        if (item.id) next.delete(item.id)
+        return next
+      })
+    }
+  }
+
+  function taskTag(task: AnswerKnowledgeTask) {
+    const presentation = TASK_STATUS_PRESENTATION[task.status]
+    return <Tag color={presentation.color}>{presentation.text}</Tag>
+  }
+
+  function correctionTag(correction: AnswerCorrection) {
+    const presentation = CORRECTION_STATUS_PRESENTATION[correction.status]
+    return (
+      <Tooltip title={correction.review_note || correction.error || presentation.text}>
+        <Tag color={presentation.color}>{presentation.text}</Tag>
+      </Tooltip>
+    )
   }
 
   function mergeKnowledgeTask(task: AnswerKnowledgeTask) {
@@ -188,12 +278,30 @@ export function ChatPage() {
       && Boolean(item.content.trim())
       && item.answer_origin !== 'NO_ANSWER'
       && !item.knowledge_task
+      && !item.correction
+  }
+
+  function canCorrect(item: ChatMessage) {
+    return item.role === 'ASSISTANT'
+      && item.status === 'COMPLETE'
+      && Boolean(item.id)
+      && Boolean(item.content.trim())
+      && !item.knowledge_task
+      && (!item.correction || ['REJECTED', 'FAILED'].includes(item.correction.status))
+  }
+
+  function startNewConversation() {
+    setActiveId(null)
+    setMessages([])
+    setStreamError('')
+    setStreamStatus('')
+    setWelcomeMessage((current) => randomWelcomeMessage(current))
   }
 
   return (
     <div className="chat-layout">
       <aside className="conversation-panel">
-        <Button type="primary" icon={<PlusOutlined />} block onClick={() => { setActiveId(null); setMessages([]) }}>
+        <Button type="primary" icon={<PlusOutlined />} block onClick={startNewConversation}>
           新对话
         </Button>
         <List
@@ -230,13 +338,21 @@ export function ChatPage() {
         </header>
         <section className="message-list">
           {loadingHistory ? <Spin /> : messages.length === 0 ? (
-            <Empty description="试试问：河海大学的校训是什么？" />
+            <article className="message assistant" data-testid="welcome-message">
+              <div className="message-role">河海智答</div>
+              <div className="message-body">
+                <Typography.Paragraph>{welcomeMessage}</Typography.Paragraph>
+              </div>
+            </article>
           ) : messages.map((item, index) => (
             <article className={`message ${item.role.toLowerCase()}`} key={`${item.id || 'local'}-${index}`}>
               <div className="message-role">{item.role === 'USER' ? '你' : '河海智答'}</div>
               <div className="message-body">
                 {item.role === 'ASSISTANT' && item.answer_origin === 'WEB_SEARCH' && (
                   <Tag color="gold" className="answer-origin-tag">联网搜索回答</Tag>
+                )}
+                {item.role === 'ASSISTANT' && item.answer_origin === 'HYBRID' && (
+                  <Tag color="blue" className="answer-origin-tag">知识库 + 联网搜索</Tag>
                 )}
                 {item.role === 'ASSISTANT' ? (
                   item.content ? <ReactMarkdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>{item.content}</ReactMarkdown>
@@ -245,18 +361,60 @@ export function ChatPage() {
                         : <Space><Spin size="small" /><Typography.Text type="secondary">{index === messages.length - 1 ? streamStatus || '正在处理…' : '正在处理…'}</Typography.Text></Space>
                 ) : <Typography.Paragraph>{item.content}</Typography.Paragraph>}
                 {item.role === 'ASSISTANT' && item.content && (
-                  <div className="message-actions">
-                    {item.knowledge_task ? taskTag(item.knowledge_task) : canAddToKnowledge(item) ? (
-                      <Button
-                        size="small"
-                        icon={<BookOutlined />}
-                        loading={item.id ? knowledgeSubmitting.has(item.id) : false}
-                        onClick={() => void addToKnowledge(item)}
-                      >
-                        加入知识库
-                      </Button>
-                    ) : null}
-                  </div>
+                  <>
+                    <div className="message-actions">
+                      {item.knowledge_task ? taskTag(item.knowledge_task) : null}
+                      {item.correction ? correctionTag(item.correction) : null}
+                      <Tooltip title="复制此回答">
+                        <Button aria-label="复制此回答" type="text" size="small" icon={<CopyOutlined />} onClick={() => void copyAnswer(item.content)} />
+                      </Tooltip>
+                      <Tooltip title="此答案准确，加入知识库">
+                        <Button
+                          aria-label="此答案准确，加入知识库"
+                          type="text"
+                          size="small"
+                          icon={<LikeOutlined />}
+                          disabled={!canAddToKnowledge(item)}
+                          loading={item.id ? knowledgeSubmitting.has(item.id) : false}
+                          onClick={() => void addToKnowledge(item)}
+                        />
+                      </Tooltip>
+                      <Tooltip title="此答案不准确，我来提供答案">
+                        <Button
+                          aria-label="此答案不准确，我来提供答案"
+                          type="text"
+                          size="small"
+                          icon={<DislikeOutlined />}
+                          disabled={!canCorrect(item)}
+                          onClick={() => startCorrection(item)}
+                        />
+                      </Tooltip>
+                    </div>
+                    {correctingMessageId === item.id && (
+                      <div className="correction-editor">
+                        <Input.TextArea
+                          value={correctionDraft}
+                          maxLength={6000}
+                          showCount
+                          autoSize={{ minRows: 3, maxRows: 10 }}
+                          placeholder="请输入你认为准确的答案"
+                          onChange={(event) => setCorrectionDraft(event.target.value)}
+                        />
+                        <Space>
+                          <Button size="small" onClick={() => { setCorrectingMessageId(null); setCorrectionDraft('') }}>取消</Button>
+                          <Button
+                            size="small"
+                            type="primary"
+                            disabled={!correctionDraft.trim()}
+                            loading={item.id ? correctionSubmitting.has(item.id) : false}
+                            onClick={() => void submitCorrection(item)}
+                          >
+                            提交
+                          </Button>
+                        </Space>
+                      </div>
+                    )}
+                  </>
                 )}
                 {item.content ? <SourceCards sources={item.sources || []} /> : null}
               </div>

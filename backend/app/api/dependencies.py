@@ -12,14 +12,14 @@ from app.core.security import decode_access_token
 from app.models.enums import Role
 from app.models.orm import User
 
-bearer_scheme = HTTPBearer(auto_error=False)
+bearer = HTTPBearer(auto_error=False)
 Database = Annotated[Session, Depends(get_db)]
 
 
 def current_user(
     db: Database,
     request: Request,
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> User:
     # ── 网关信任模式（生产环境） ──
     # Gateway 鉴权通过后注入 X-Login-Name（Java 登录名），Python 按名查找或创建影子用户

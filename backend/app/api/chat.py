@@ -5,8 +5,14 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
 from app.core.responses import success
-from app.models.orm import AnswerKnowledgeTask, Conversation, Message
-from app.models.schemas import AnswerKnowledgeTaskOut, ChatRequest
+from app.models.orm import AnswerCorrection, AnswerKnowledgeTask, Conversation, Message
+from app.models.schemas import (
+    AnswerCorrectionOut,
+    AnswerCorrectionSubmitRequest,
+    AnswerKnowledgeTaskOut,
+    ChatRequest,
+)
+from app.services.answer_corrections import answer_correction_service
 from app.services.answer_knowledge import answer_knowledge_service
 from app.services.chat import chat_service
 
@@ -21,6 +27,7 @@ def task_dict(task: AnswerKnowledgeTask) -> dict[str, object]:
         assistant_message_id=task.assistant_message_id,
         status=task.status,
         document_id=task.document_id,
+        qa_entry_id=task.qa_entry_id,
         cleaned_title=task.cleaned_title,
         error=task.error,
         created_at=task.created_at,
@@ -29,7 +36,28 @@ def task_dict(task: AnswerKnowledgeTask) -> dict[str, object]:
     ).model_dump(mode="json")
 
 
-def message_dict(message: Message, task: AnswerKnowledgeTask | None = None) -> dict[str, object]:
+def correction_dict(correction: AnswerCorrection) -> dict[str, object]:
+    return AnswerCorrectionOut(
+        id=correction.id,
+        assistant_message_id=correction.assistant_message_id,
+        status=correction.status,
+        proposed_answer=correction.proposed_answer,
+        reviewed_question=correction.reviewed_question,
+        reviewed_answer=correction.reviewed_answer,
+        review_note=correction.review_note,
+        approved_document_id=correction.approved_document_id,
+        error=correction.error,
+        created_at=correction.created_at,
+        updated_at=correction.updated_at,
+        reviewed_at=correction.reviewed_at,
+    ).model_dump(mode="json")
+
+
+def message_dict(
+    message: Message,
+    task: AnswerKnowledgeTask | None = None,
+    correction: AnswerCorrection | None = None,
+) -> dict[str, object]:
     return {
         "id": message.id,
         "role": message.role.value,
@@ -40,6 +68,7 @@ def message_dict(message: Message, task: AnswerKnowledgeTask | None = None) -> d
         "latency_ms": message.latency_ms,
         "answer_origin": message.answer_origin.value if message.answer_origin else None,
         "knowledge_task": task_dict(task) if task is not None else None,
+        "correction": correction_dict(correction) if correction is not None else None,
         "created_at": message.created_at.isoformat(),
     }
 
@@ -117,6 +146,24 @@ def get_answer_knowledge_task(
     return success(task_dict(task))
 
 
+@router.post("/messages/{message_id}/correction", status_code=status.HTTP_202_ACCEPTED)
+def submit_answer_correction(
+    message_id: int,
+    body: AnswerCorrectionSubmitRequest,
+    db: Database,
+    user: CurrentUser,
+) -> dict[str, object]:
+    try:
+        correction = answer_correction_service.submit_correction(
+            db, user, message_id, body.corrected_answer
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success(correction_dict(correction), "纠错已提交，等待管理员审核", 202)
+
+
 @router.get("/conversations")
 def list_conversations(db: Database, user: CurrentUser) -> dict[str, object]:
     rows = db.execute(
@@ -161,6 +208,15 @@ def get_conversation(conversation_id: int, db: Database, user: CurrentUser) -> d
             )
         ).all()
     }
+    correction_by_message = {
+        correction.assistant_message_id: correction
+        for correction in db.scalars(
+            select(AnswerCorrection).where(
+                AnswerCorrection.assistant_message_id.in_([message.id for message in messages])
+            )
+        ).all()
+        if correction.assistant_message_id is not None
+    }
     return success(
         {
             "id": conversation.id,
@@ -168,7 +224,12 @@ def get_conversation(conversation_id: int, db: Database, user: CurrentUser) -> d
             "created_at": conversation.created_at.isoformat(),
             "updated_at": conversation.updated_at.isoformat(),
             "messages": [
-                message_dict(message, task_by_message.get(message.id)) for message in messages
+                message_dict(
+                    message,
+                    task_by_message.get(message.id),
+                    correction_by_message.get(message.id),
+                )
+                for message in messages
             ],
         }
     )

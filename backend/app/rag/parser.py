@@ -99,11 +99,11 @@ def parse_file(path: Path, fallback_title: str | None = None) -> ParsedDocument:
         return ParsedDocument(title, [ParsedSection(cleaned)], source, published)
     if suffix == ".pdf":
         reader = PdfReader(io.BytesIO(path.read_bytes()))
-        sections = [
-            ParsedSection((page.extract_text() or "").strip(), page_number=index)
-            for index, page in enumerate(reader.pages, start=1)
-            if (page.extract_text() or "").strip()
-        ]
+        sections = []
+        for index, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").strip()
+            if text:
+                sections.append(ParsedSection(text, page_number=index))
         return ParsedDocument(fallback, sections)
     if suffix == ".docx":
         doc = DocxDocument(io.BytesIO(path.read_bytes()))

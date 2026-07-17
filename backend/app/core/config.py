@@ -64,10 +64,16 @@ class Settings(BaseSettings):
     context_top_k: int = 5
     rrf_k: int = 60
 
-    web_search_enabled: bool = False
-    web_search_provider: Literal["baidu"] = "baidu"
+    web_search_enabled: bool = True
+    web_search_provider: Literal["free", "baidu"] = "free"
     web_search_snippet_max_chars: int = 360
     web_search_content_max_chars: int = 1200
+    free_search_region: str = "cn-zh"
+    free_search_safe_search: Literal["on", "moderate", "off"] = "moderate"
+    free_search_time_limit: Literal["d", "w", "m", "y"] | None = None
+    free_search_backend: str = "auto"
+    free_search_max_results: int = 5
+    free_search_timeout_seconds: int = 15
     baidu_search_base_url: str = "https://qianfan.baidubce.com"
     baidu_search_path: str = "/v2/ai_search/web_search"
     baidu_search_api_key: SecretStr = SecretStr("")
@@ -75,14 +81,24 @@ class Settings(BaseSettings):
     baidu_search_max_results: int = 5
     baidu_search_timeout_connect_seconds: float = 5.0
     baidu_search_timeout_read_seconds: float = 15.0
-    baidu_search_safe_search: Literal["strict", "none"] = "strict"
+    baidu_search_safe_search: bool = True
     baidu_search_recency_filter: str | None = None
     baidu_search_match_site: str | None = None
     baidu_search_block_websites: str = ""
 
     answer_knowledge_category: str = "问答沉淀"
+    answer_web_archive_category: str = "网页归档"
+    answer_correction_category: str = "用户纠错（已审核）"
     answer_knowledge_max_answer_chars: int = 6000
     answer_knowledge_max_source_chars: int = 6000
+    qa_retrieval_enabled: bool = True
+    qa_retrieval_top_k: int = 3
+    qa_direct_min_score: float = 0.96
+    qa_assist_min_score: float = 0.86
+    qa_dedupe_min_score: float = 0.97
+    qa_min_score_margin: float = 0.03
+    qa_time_sensitive_max_age_days: int = 120
+    evidence_sufficiency_check_enabled: bool = True
 
     chunk_size: int = 500
     chunk_overlap: int = 80
@@ -105,6 +121,14 @@ class Settings(BaseSettings):
     @property
     def knowledge_artifact_dir(self) -> Path:
         return self.knowledge_base_dir / "documents"
+
+    @property
+    def qa_artifact_dir(self) -> Path:
+        return self.knowledge_base_dir / "qa"
+
+    @property
+    def preview_dir(self) -> Path:
+        return self.data_dir / "previews"
 
     @property
     def cors_origins(self) -> list[str]:
@@ -132,6 +156,8 @@ class Settings(BaseSettings):
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.knowledge_base_dir.mkdir(parents=True, exist_ok=True)
         self.knowledge_artifact_dir.mkdir(parents=True, exist_ok=True)
+        self.qa_artifact_dir.mkdir(parents=True, exist_ok=True)
+        self.preview_dir.mkdir(parents=True, exist_ok=True)
         self.index_dir.mkdir(parents=True, exist_ok=True)
 
     def validate_runtime(self) -> None:

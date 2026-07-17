@@ -18,3 +18,21 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) throw new Error(payload.message || `请求失败 (${response.status})`)
   return payload.data
 }
+
+export async function apiBlob(path: string): Promise<Blob> {
+  const headers = new Headers()
+  const token = authToken.get()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(path, { headers })
+  if (!response.ok) {
+    let errorMessage = `请求失败 (${response.status})`
+    try {
+      const payload = (await response.json()) as Envelope<unknown>
+      errorMessage = payload.message || errorMessage
+    } catch {
+      // Binary endpoints may not return a JSON error body.
+    }
+    throw new Error(errorMessage)
+  }
+  return response.blob()
+}

@@ -45,9 +45,16 @@ button, input, textarea { font: inherit; }
 .message.user .message-body { background: #dff2ee; }
 .message-body p:last-child { margin-bottom: 0; }
 .answer-origin-tag { margin-bottom: 8px; }
-.message-actions { display: flex; gap: 8px; align-items: center; margin: 8px 0; min-height: 24px; }
+.message-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; margin: 8px 0 0; min-height: 32px; }
+.correction-editor { margin-top: 10px; padding: 12px; border-radius: 10px; background: #f4f8f7; }
+.correction-editor textarea { margin-bottom: 10px; }
+.source-group { margin-top: 8px; }
 .source-detail { border-left: 3px solid #46a69e; padding-left: 12px; }
 .source-detail.web-source { border-left-color: #d89614; }
+.preview-actions { margin: 18px 0 10px; }
+.document-preview { white-space: pre-wrap; word-break: break-word; padding: 16px; border: 1px solid #dce8e6; border-radius: 8px; background: #f8fbfa; max-height: 58vh; overflow: auto; }
+.correction-review-form { margin-top: 22px; }
+.review-text { white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
 .composer { padding: 12px max(24px, calc((100% - 880px) / 2)) 20px; background: linear-gradient(transparent, #f2f6f5 25%); }
 .composer .ant-alert { margin-bottom: 8px; }
 .composer textarea { padding: 12px; }

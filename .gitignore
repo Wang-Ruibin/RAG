@@ -75,6 +75,48 @@ huggingface/
 *.swp
 *.swo
 *~
+
+# AI / LLM 配置 (不上传到 GitHub)
+*.env
+.env.*
+.env.local
+.env.*.local
+config/secrets.*
+config/api_keys.*
+*.key
+*.pem
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Cursor
+.cursor/
+.cursorrules
+
+# Copilot
+.github/copilot-instructions.md
+
+# AI 模型文件
+*.bin
+*.gguf
+*.safetensors
+/models/
+ollama_data/
+
+# ChromaDB 数据
+chroma_data/
+*.chroma
+
+# 上传文件
+uploads/
+data/uploads/
+
+# Logs
+*.log
+logs/
+
+# OS
 .DS_Store
 Thumbs.db
 

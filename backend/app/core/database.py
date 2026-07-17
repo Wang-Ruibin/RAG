@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -50,3 +50,15 @@ def init_database() -> None:
     settings.validate_runtime()
     settings.ensure_directories()
     Base.metadata.create_all(bind=engine)
+    _ensure_runtime_columns()
+
+
+def _ensure_runtime_columns() -> None:
+    inspector = inspect(engine)
+    if "messages" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("messages")}
+    if "answer_origin" in columns:
+        return
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE messages ADD COLUMN answer_origin VARCHAR(32)"))

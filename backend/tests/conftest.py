@@ -16,11 +16,14 @@ os.environ["DATA_DIR"] = str(TEST_ROOT / "data")
 os.environ["FRONTEND_DIST"] = str(TEST_ROOT / "frontend-dist")
 os.environ["JWT_SECRET"] = "test-only-secret-at-least-32-characters"
 os.environ["RERANK_ENABLED"] = "false"
+os.environ["QA_RETRIEVAL_ENABLED"] = "false"
+os.environ["EVIDENCE_SUFFICIENCY_CHECK_ENABLED"] = "false"
 
 from app.core.config import settings  # noqa: E402
 from app.core.database import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.rag.index import index_manager  # noqa: E402
+from app.rag.qa_index import qa_index_manager  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +33,7 @@ def clean_database() -> Iterator[None]:
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     index_manager.rebuild()
+    qa_index_manager.load(valid_entry_ids=[])
     yield
 
 

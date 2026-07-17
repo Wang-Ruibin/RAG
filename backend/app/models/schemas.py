@@ -5,7 +5,16 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from .enums import DocumentStatus, MessageStatus, ProcessingStage, Role
+from .enums import (
+    AnswerCorrectionStatus,
+    AnswerKnowledgeStatus,
+    AnswerOrigin,
+    DocumentKind,
+    DocumentStatus,
+    MessageStatus,
+    ProcessingStage,
+    Role,
+)
 
 
 class RegisterRequest(BaseModel):
@@ -50,6 +59,8 @@ class DocumentOut(BaseModel):
     mime_type: str
     size: int
     category: str
+    document_kind: DocumentKind
+    contributor_name: str | None
     source_url: str | None
     published_at: date | None
     status: DocumentStatus
@@ -69,13 +80,64 @@ class DocumentUpdateRequest(BaseModel):
 
 
 class SourceRef(BaseModel):
-    chunk_id: int
-    document_id: int
+    source_type: str | None = None
+    chunk_id: int | None = None
+    document_id: int | None = None
     title: str
+    url: str | None = None
     source_url: str | None = None
     published_at: date | None = None
-    score: float
+    score: float | None = None
     snippet: str
+    content: str | None = None
+    site_name: str | None = None
+    domain: str | None = None
+    citation_index: int | None = None
+    contributor_name: str | None = None
+
+
+class DocumentPreviewOut(BaseModel):
+    content: str
+    offset: int
+    limit: int
+    total_chars: int
+    has_more: bool
+    format: str
+
+
+class AnswerCorrectionSubmitRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    corrected_answer: str = Field(min_length=2, max_length=6000)
+
+
+class AnswerCorrectionApproveRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    question: str = Field(min_length=2, max_length=1000)
+    answer: str = Field(min_length=2, max_length=6000)
+    source_document_ids: list[int] = Field(default_factory=list, max_length=20)
+
+
+class AnswerCorrectionRejectRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    reason: str = Field(min_length=2, max_length=1000)
+
+
+class AnswerCorrectionOut(BaseModel):
+    id: int
+    assistant_message_id: int | None
+    status: AnswerCorrectionStatus
+    proposed_answer: str
+    reviewed_question: str | None = None
+    reviewed_answer: str | None = None
+    review_note: str | None = None
+    approved_document_id: int | None = None
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    reviewed_at: datetime | None = None
 
 
 class ChatRequest(BaseModel):
@@ -88,8 +150,22 @@ class ChatResult(BaseModel):
     message_id: int
     answer: str
     sources: list[SourceRef]
+    answer_origin: AnswerOrigin
     model: str
     latency_ms: int
+
+
+class AnswerKnowledgeTaskOut(BaseModel):
+    id: int
+    assistant_message_id: int
+    status: AnswerKnowledgeStatus
+    document_id: int | None = None
+    qa_entry_id: int | None = None
+    cleaned_title: str | None = None
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    finished_at: datetime | None = None
 
 
 class MessageOut(BaseModel):
@@ -100,6 +176,9 @@ class MessageOut(BaseModel):
     status: MessageStatus
     model: str | None
     latency_ms: int | None
+    answer_origin: AnswerOrigin | None = None
+    knowledge_task: AnswerKnowledgeTaskOut | None = None
+    correction: AnswerCorrectionOut | None = None
     created_at: datetime
 
 

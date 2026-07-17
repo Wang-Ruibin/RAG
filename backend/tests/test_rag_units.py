@@ -129,7 +129,7 @@ def test_relevant_context_keeps_multiple_strong_results_and_drops_weak_ones() ->
     assert [item.chunk_id for item in selected] == [1, 2]
 
 
-def test_grounded_answer_exposes_all_strong_context_sources() -> None:
+def test_grounded_answer_exposes_only_cited_context_sources() -> None:
     results = [
         RetrievalResult(1, 1, "资料1", "事实", None, None, 0.90),
         RetrievalResult(2, 2, "资料2", "补充事实", None, None, 0.82),
@@ -139,7 +139,7 @@ def test_grounded_answer_exposes_all_strong_context_sources() -> None:
 
     assert answer == "答案 [S1]"
     assert cited == [1]
-    assert [source["citation_index"] for source in sources] == [1, 2]
+    assert [source["citation_index"] for source in sources] == [1]
 
 
 def test_retrieval_query_only_adds_history_for_context_dependent_followups() -> None:

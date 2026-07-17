@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date
 
+import numpy as np
+
 from app.core.config import settings
 
 from . import embedding
@@ -65,6 +67,8 @@ class RetrievalResult:
     dense_rank: int | None = None
     sparse_rank: int | None = None
     lexical_coverage: float = 0.0
+    document_kind: str = "KNOWLEDGE_BASE"
+    contributor_name: str | None = None
 
     def source_dict(self, citation_index: int | None = None) -> dict[str, object]:
         snippet = self.content[:360] + ("…" if len(self.content) > 360 else "")
@@ -76,6 +80,7 @@ class RetrievalResult:
             "published_at": self.published_at.isoformat() if self.published_at else None,
             "score": round(self.score, 4),
             "snippet": snippet,
+            "contributor_name": self.contributor_name,
         }
         if citation_index is not None:
             source["citation_index"] = citation_index
@@ -135,11 +140,12 @@ class RetrievalService:
         query: str,
         top_k: int | None = None,
         *,
+        query_vector: np.ndarray | None = None,
         use_sparse: bool = True,
         use_rerank: bool | None = None,
     ) -> list[RetrievalResult]:
         started = time.perf_counter()
-        vector = embedding.embedder.embed_query(query)
+        vector = query_vector if query_vector is not None else embedding.embedder.embed_query(query)
         embedded_at = time.perf_counter()
         dense_future = self._pool.submit(self.manager.dense_search, vector, settings.dense_top_k)
         sparse_future = (
@@ -172,6 +178,16 @@ class RetrievalService:
             ]
             candidates.sort(key=lambda item: item[2], reverse=True)
 
+        deduplicated = []
+        seen_documents: set[int] = set()
+        for candidate in candidates:
+            document_id = candidate[1].document_id
+            if document_id in seen_documents:
+                continue
+            seen_documents.add(document_id)
+            deduplicated.append(candidate)
+        candidates = deduplicated
+
         logger.info(
             "RAG retrieval completed query_embedding=%.2fs total=%.2fs candidates=%d "
             "rerank=%s top_document=%s top_score=%.4f",
@@ -196,6 +212,8 @@ class RetrievalService:
                 dense_rank=dense_ranks.get(chunk_id),
                 sparse_rank=sparse_ranks.get(chunk_id),
                 lexical_coverage=lexical_coverage(query, record.content),
+                document_kind=record.document_kind,
+                contributor_name=record.contributor_name,
             )
             for chunk_id, record, score in candidates[:limit]
         ]

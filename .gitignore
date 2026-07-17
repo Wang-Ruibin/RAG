@@ -57,6 +57,7 @@ uploads/
 faiss.index
 *.log
 logs/
+runtime/
 
 # Local model files and caches
 models/

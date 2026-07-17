@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.models.enums import DocumentStatus, ProcessingStage
+from app.models.enums import DocumentKind, DocumentStatus, ProcessingStage
 from app.models.orm import Document, IngestionJob
 from app.rag import embedding
 from app.rag.chunker import chunk_document
@@ -51,8 +51,11 @@ class DocumentService:
         category: str,
         uploaded_by: int,
         enqueue: bool = True,
+        document_kind: DocumentKind = DocumentKind.KNOWLEDGE_BASE,
+        contributor_name: str | None = None,
     ) -> tuple[Document, IngestionJob]:
-        suffix = Path(original_name).suffix.lower()
+        safe_original_name = Path(original_name.replace("\\", "/")).name
+        suffix = Path(safe_original_name).suffix.lower()
         if suffix not in settings.allowed_extensions:
             raise ValueError("仅支持 Markdown、TXT、PDF、DOCX 文件")
         if len(data) > settings.max_upload_bytes:
@@ -71,12 +74,14 @@ class DocumentService:
         target = settings.upload_dir / stored_name
         target.write_bytes(data)
         document = Document(
-            title=title.strip() or Path(original_name).stem,
-            original_name=Path(original_name).name,
+            title=title.strip() or Path(safe_original_name).stem,
+            original_name=safe_original_name,
             stored_name=stored_name,
             mime_type=mime_type,
             size=len(data),
             category=category.strip() or "其他",
+            document_kind=document_kind,
+            contributor_name=contributor_name.strip()[:80] if contributor_name else None,
             content_hash=digest,
             uploaded_by=uploaded_by,
             status=DocumentStatus.QUEUED,
@@ -150,6 +155,7 @@ class DocumentService:
                 path = settings.upload_dir / document.stored_name
                 fallback_title = document.title
             parsed = parse_file(path, fallback_title=fallback_title)
+            self.invalidate_preview(document_id)
 
             self._set_stage(document_id, job_id, ProcessingStage.CLEANING)
             self._set_stage(document_id, job_id, ProcessingStage.CHUNKING)
@@ -172,6 +178,8 @@ class DocumentService:
                     source_url = parsed.source_url or document.source_url
                     published_at = parsed.published_at or document.published_at
                     category = document.category
+                    document_kind = document.document_kind.value
+                    contributor_name = document.contributor_name
                     document.title = title
                     document.source_url = source_url
                     document.published_at = published_at
@@ -184,6 +192,8 @@ class DocumentService:
                     document_id=document_id,
                     title=title,
                     category=category,
+                    document_kind=document_kind,
+                    contributor_name=contributor_name,
                     source_url=source_url,
                     published_at=published_at,
                     drafts=drafts,
@@ -280,6 +290,50 @@ class DocumentService:
             path = settings.upload_dir / stored_name
             if path.exists():
                 path.unlink()
+            self.invalidate_preview(document_id)
+
+    def preview_text(self, document: Document) -> tuple[str, str]:
+        cache = settings.preview_dir / f"{document.id}-{document.content_hash}.txt"
+        source_suffix = Path(document.original_name).suffix.lower().lstrip(".")
+        preview_format = (
+            source_suffix
+            if source_suffix in {"md", "txt"}
+            else f"{source_suffix} extracted-text"
+        )
+        if cache.is_file():
+            return cache.read_text(encoding="utf-8", errors="replace"), preview_format
+        path = self.source_path(document)
+        suffix = path.suffix.lower()
+        if suffix in {".md", ".txt"}:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        else:
+            parsed = parse_file(path, fallback_title=document.title)
+            parts = []
+            for section in parsed.sections:
+                if section.page_number is not None:
+                    parts.append(f"[第 {section.page_number} 页]")
+                elif section.heading_path:
+                    parts.append(section.heading_path)
+                parts.append(section.text)
+            text = "\n\n".join(part for part in parts if part).strip()
+        settings.preview_dir.mkdir(parents=True, exist_ok=True)
+        temp = cache.with_suffix(".tmp")
+        temp.write_text(text, encoding="utf-8")
+        temp.replace(cache)
+        return text, preview_format
+
+    @staticmethod
+    def source_path(document: Document) -> Path:
+        root = settings.upload_dir.resolve()
+        path = (settings.upload_dir / document.stored_name).resolve()
+        if path.parent != root or not path.is_file():
+            raise FileNotFoundError("知识文档原文件不存在")
+        return path
+
+    @staticmethod
+    def invalidate_preview(document_id: int) -> None:
+        for path in settings.preview_dir.glob(f"{document_id}-*.txt"):
+            path.unlink(missing_ok=True)
 
     def update_metadata(
         self,

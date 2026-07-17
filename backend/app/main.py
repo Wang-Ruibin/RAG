@@ -18,9 +18,11 @@ from app.core.config import settings
 from app.core.database import SessionLocal, init_database
 from app.core.responses import success
 from app.models.enums import DocumentStatus, MessageStatus
-from app.models.orm import Document, Message
+from app.models.orm import Document, Message, QaEntry
 from app.rag.index import index_manager
+from app.rag.qa_index import qa_index_manager
 from app.rag.retrieval import retrieval_service
+from app.services.answer_corrections import answer_correction_service
 from app.services.documents import document_service
 
 logger = logging.getLogger("uvicorn.error")
@@ -42,6 +44,7 @@ class SPAStaticFiles(StaticFiles):
 async def lifespan(_app: FastAPI):
     init_database()
     document_service.recover_stuck_jobs()
+    answer_correction_service.recover_stuck_corrections()
     with SessionLocal() as db:
         for message in db.query(Message).filter(Message.status == MessageStatus.STREAMING).all():
             message.status = MessageStatus.ERROR
@@ -53,6 +56,9 @@ async def lifespan(_app: FastAPI):
                 select(Document.id).where(Document.status != DocumentStatus.DELETING)
             ).all()
         )
+        valid_qa_entry_ids = set(
+            db.scalars(select(QaEntry.id).where(QaEntry.is_active.is_(True))).all()
+        )
     index_started = time.perf_counter()
     index_count = index_manager.load(valid_document_ids=valid_document_ids)
     logger.info(
@@ -60,6 +66,8 @@ async def lifespan(_app: FastAPI):
         index_count,
         time.perf_counter() - index_started,
     )
+    qa_count = qa_index_manager.load(valid_entry_ids=valid_qa_entry_ids)
+    logger.info("Hidden QA index loaded entries=%d", qa_count)
     if settings.rag_prewarm and index_count:
         retrieval_service.warmup()
     yield

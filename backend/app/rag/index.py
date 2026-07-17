@@ -41,6 +41,8 @@ class KnowledgeChunk:
     heading_path: str | None
     page_number: int | None
     token_count: int
+    document_kind: str = "KNOWLEDGE_BASE"
+    contributor_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +98,8 @@ class IndexManager:
         drafts: list[ChunkDraft],
         vectors: np.ndarray,
         embedding_model: str,
+        document_kind: str = "KNOWLEDGE_BASE",
+        contributor_name: str | None = None,
         rebuild: bool = True,
     ) -> int:
         matrix = np.asarray(vectors, dtype=np.float32)
@@ -113,6 +117,8 @@ class IndexManager:
             "document_id": document_id,
             "title": title,
             "category": category,
+            "document_kind": document_kind,
+            "contributor_name": contributor_name,
             "source_url": source_url,
             "published_at": published_at.isoformat() if published_at else None,
             "embedding_model": embedding_model,
@@ -293,15 +299,7 @@ class IndexManager:
         if persisted_ids != chunk_ids:
             raise ValueError("FAISS vector IDs do not match document artifacts")
 
-        ordered_records = {chunk_id: records[chunk_id] for chunk_id in chunk_ids}
-        corpus = [tokenize(ordered_records[chunk_id].content) or [""] for chunk_id in chunk_ids]
-        snapshot = IndexSnapshot(
-            dense=dense,
-            bm25=BM25Okapi(corpus),
-            chunk_ids=chunk_ids,
-            records=ordered_records,
-            count=len(ordered_records),
-        )
+        snapshot = self._build_snapshot(dense, records)
         with self._snapshot_lock:
             self._snapshot = snapshot
         return snapshot.count
@@ -338,23 +336,29 @@ class IndexManager:
         order = np.argsort(chunk_ids)
         chunk_ids = chunk_ids[order]
         vectors = vectors[order]
-        ordered_records = {int(chunk_id): records[int(chunk_id)] for chunk_id in chunk_ids}
         dimension = int(vectors.shape[1])
         dense = faiss.IndexIDMap2(faiss.IndexFlatIP(dimension))
         dense.add_with_ids(vectors, chunk_ids)
-        corpus = [tokenize(ordered_records[int(value)].content) or [""] for value in chunk_ids]
-        bm25 = BM25Okapi(corpus)
-        snapshot = IndexSnapshot(
-            dense=dense,
-            bm25=bm25,
-            chunk_ids=tuple(int(value) for value in chunk_ids.tolist()),
-            records=ordered_records,
-            count=len(ordered_records),
-        )
+        snapshot = self._build_snapshot(dense, records)
         self._persist(dense, len(records), dimension, next(iter(models)))
         with self._snapshot_lock:
             self._snapshot = snapshot
         return len(records)
+
+    @staticmethod
+    def _build_snapshot(
+        dense: faiss.IndexIDMap2, records: dict[int, KnowledgeChunk]
+    ) -> IndexSnapshot:
+        chunk_ids = tuple(sorted(records))
+        ordered_records = {chunk_id: records[chunk_id] for chunk_id in chunk_ids}
+        corpus = [tokenize(record.content) or [""] for record in ordered_records.values()]
+        return IndexSnapshot(
+            dense=dense,
+            bm25=BM25Okapi(corpus),
+            chunk_ids=chunk_ids,
+            records=ordered_records,
+            count=len(ordered_records),
+        )
 
     def _load_artifact(
         self, path: Path
@@ -374,6 +378,15 @@ class IndexManager:
         published = payload.get("published_at")
         published_at = date.fromisoformat(published) if published else None
         document_id = int(payload["document_id"])
+        category = str(payload.get("category") or "其他")
+        document_kind = str(
+            payload.get("document_kind")
+            or (
+                "WEB_ARCHIVE"
+                if category == settings.answer_web_archive_category
+                else "KNOWLEDGE_BASE"
+            )
+        )
         result: dict[int, KnowledgeChunk] = {}
         for chunk_id, raw in zip(chunk_ids.tolist(), chunks, strict=True):
             expected = self.stable_chunk_id(document_id, int(raw["ordinal"]))
@@ -385,18 +398,18 @@ class IndexManager:
                 ordinal=int(raw["ordinal"]),
                 title=str(payload["title"]),
                 content=str(raw["content"]),
-                category=str(payload.get("category") or "其他"),
+                category=category,
                 source_url=payload.get("source_url"),
                 published_at=published_at,
                 heading_path=raw.get("heading_path"),
                 page_number=raw.get("page_number"),
                 token_count=int(raw.get("token_count") or 0),
+                document_kind=document_kind,
+                contributor_name=payload.get("contributor_name"),
             )
         return result, chunk_ids, vectors, str(payload["embedding_model"])
 
-    def _load_artifact_records(
-        self, path: Path
-    ) -> tuple[dict[int, KnowledgeChunk], str, int]:
+    def _load_artifact_records(self, path: Path) -> tuple[dict[int, KnowledgeChunk], str, int]:
         """Read searchable text and IDs without decompressing stored embeddings."""
         with np.load(path, allow_pickle=False) as archive:
             chunk_ids = np.asarray(archive["chunk_ids"], dtype=np.int64)
@@ -410,6 +423,15 @@ class IndexManager:
         published = payload.get("published_at")
         published_at = date.fromisoformat(published) if published else None
         document_id = int(payload["document_id"])
+        category = str(payload.get("category") or "其他")
+        document_kind = str(
+            payload.get("document_kind")
+            or (
+                "WEB_ARCHIVE"
+                if category == settings.answer_web_archive_category
+                else "KNOWLEDGE_BASE"
+            )
+        )
         records: dict[int, KnowledgeChunk] = {}
         for chunk_id, raw in zip(chunk_ids.tolist(), chunks, strict=True):
             expected = self.stable_chunk_id(document_id, int(raw["ordinal"]))
@@ -421,12 +443,14 @@ class IndexManager:
                 ordinal=int(raw["ordinal"]),
                 title=str(payload["title"]),
                 content=str(raw["content"]),
-                category=str(payload.get("category") or "其他"),
+                category=category,
                 source_url=payload.get("source_url"),
                 published_at=published_at,
                 heading_path=raw.get("heading_path"),
                 page_number=raw.get("page_number"),
                 token_count=int(raw.get("token_count") or 0),
+                document_kind=document_kind,
+                contributor_name=payload.get("contributor_name"),
             )
         return records, str(payload["embedding_model"]), int(payload["dimension"])
 

@@ -1,4 +1,4 @@
-import { FileTextOutlined, LogoutOutlined, MessageOutlined, TeamOutlined } from '@ant-design/icons'
+import { AuditOutlined, FileTextOutlined, LogoutOutlined, MessageOutlined, TeamOutlined } from '@ant-design/icons'
 import { Button, Layout, Menu, Spin, Typography } from 'antd'
 import { lazy, Suspense } from 'react'
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -8,6 +8,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage').then((module) => ({ def
 const ChatPage = lazy(() => import('./pages/ChatPage').then((module) => ({ default: module.ChatPage })))
 const DocumentsPage = lazy(() => import('./pages/DocumentsPage').then((module) => ({ default: module.DocumentsPage })))
 const UsersPage = lazy(() => import('./pages/UsersPage').then((module) => ({ default: module.UsersPage })))
+const CorrectionReviewPage = lazy(() => import('./pages/CorrectionReviewPage').then((module) => ({ default: module.CorrectionReviewPage })))
 
 function Protected({ admin = false }: { admin?: boolean }) {
   const { user, loading } = useAuth()
@@ -23,9 +24,10 @@ function Shell() {
   const navigate = useNavigate()
   const items = [
     { key: '/chat', icon: <MessageOutlined />, label: '校园问答' },
+    { key: '/knowledge', icon: <FileTextOutlined />, label: '知识库' },
     ...(user?.role === 'ADMIN'
       ? [
-          { key: '/admin/documents', icon: <FileTextOutlined />, label: '知识库' },
+          { key: '/admin/corrections', icon: <AuditOutlined />, label: '纠错审核' },
           { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
         ]
       : []),
@@ -46,7 +48,7 @@ function Shell() {
         />
         <div className="sider-user">
           <Typography.Text ellipsis>{user?.name}</Typography.Text>
-          <Typography.Text type="secondary">{user?.role === 'ADMIN' ? '管理员' : '学生'}</Typography.Text>
+          <Typography.Text type="secondary" ellipsis>{user?.email}</Typography.Text>
           <Button type="text" icon={<LogoutOutlined />} onClick={() => { logout(); navigate('/login') }}>
             退出登录
           </Button>
@@ -65,8 +67,10 @@ export default function App() {
         <Route element={<Protected />}>
           <Route element={<Shell />}>
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/knowledge" element={<DocumentsPage />} />
+            <Route path="/admin/documents" element={<Navigate to="/knowledge" replace />} />
             <Route element={<Protected admin />}>
-              <Route path="/admin/documents" element={<DocumentsPage />} />
+              <Route path="/admin/corrections" element={<CorrectionReviewPage />} />
               <Route path="/admin/users" element={<UsersPage />} />
             </Route>
           </Route>

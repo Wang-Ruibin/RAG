@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Card,
   Input,
@@ -168,7 +169,7 @@ export default function Chat() {
             // Insert an empty AI message placeholder to fill as tokens arrive
             setMessages((prev) => [
               ...prev,
-              { id: aiMsgId, role: 'ai', content: '', isRAG: true, recordId },
+              { id: aiMsgId, role: 'ai', content: '正在检索知识库...', isRAG: true, recordId },
             ]);
 
             const controller = new AbortController();
@@ -178,9 +179,11 @@ export default function Chat() {
 
             const appendToken = (content: string) => {
               acc += content;
-              setMessages((prev) =>
-                prev.map((m) => (m.id === aiMsgId ? { ...m, content: acc } : m)),
-              );
+              flushSync(() => {
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === aiMsgId ? { ...m, content: acc } : m)),
+                );
+              });
             };
 
             try {
@@ -191,9 +194,11 @@ export default function Chat() {
                   onChunk: appendToken,
                   onSources: (srcs) => {
                     finalSources = srcs;
-                    setMessages((prev) =>
-                      prev.map((m) => (m.id === aiMsgId ? { ...m, sources: srcs } : m)),
-                    );
+                    flushSync(() => {
+                      setMessages((prev) =>
+                        prev.map((m) => (m.id === aiMsgId ? { ...m, sources: srcs } : m)),
+                      );
+                    });
                   },
                   onDone: (result) => {
                     // Prefer the accumulated stream; fall back to done payload

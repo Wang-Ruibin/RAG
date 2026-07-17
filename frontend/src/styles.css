@@ -44,7 +44,10 @@ button, input, textarea { font: inherit; }
 .message-body { background: white; padding: 14px 18px; border-radius: 4px 16px 16px 16px; box-shadow: 0 5px 22px rgba(25,60,57,.06); overflow-wrap: anywhere; }
 .message.user .message-body { background: #dff2ee; }
 .message-body p:last-child { margin-bottom: 0; }
+.answer-origin-tag { margin-bottom: 8px; }
+.message-actions { display: flex; gap: 8px; align-items: center; margin: 8px 0; min-height: 24px; }
 .source-detail { border-left: 3px solid #46a69e; padding-left: 12px; }
+.source-detail.web-source { border-left-color: #d89614; }
 .composer { padding: 12px max(24px, calc((100% - 880px) / 2)) 20px; background: linear-gradient(transparent, #f2f6f5 25%); }
 .composer .ant-alert { margin-bottom: 8px; }
 .composer textarea { padding: 12px; }

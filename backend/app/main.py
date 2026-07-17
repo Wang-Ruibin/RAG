@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api import admin, auth, chat, documents, system
 from app.core.config import settings
 from app.core.database import SessionLocal, init_database
+from app.core.oper_log import OperLogMiddleware
 from app.core.responses import success
 from app.models.enums import MessageStatus
 from app.models.orm import Message
@@ -72,6 +73,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# 写操作记入 Java 共用的 sys_oper_log 表（系统日志页面直接可见）
+app.add_middleware(OperLogMiddleware)
 
 
 @app.exception_handler(HTTPException)

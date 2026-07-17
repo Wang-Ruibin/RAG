@@ -77,3 +77,13 @@ huggingface/
 *~
 .DS_Store
 Thumbs.db
+
+# ChromaDB 数据
+chroma_data/
+*.chroma
+
+# Additional upload locations
+data/uploads/
+
+# Maven build output
+**/target/

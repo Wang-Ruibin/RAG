@@ -1,0 +1,51 @@
+server:
+  port: 9201
+
+spring:
+  application:
+    name: campus-system
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+        namespace: public
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/campus_qa?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: 812731mhn.
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 123456
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 86400
+  active-timeout: 1800
+  is-concurrent: true
+  is-share: true
+  token-style: tik
+  is-log: false
+  is-read-cookie: true
+  cookie-auto-fill-prefix: true
+  jwt-secret-key: campusQASecretKey2024abcdefghijk
+
+logging:
+  level:
+    com.campus.system: debug
+
+# Knife4j
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+knife4j:
+  enable: true

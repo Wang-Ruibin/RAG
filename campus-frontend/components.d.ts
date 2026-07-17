@@ -7,6 +7,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AppLogo: typeof import('./src/components/AppLogo.vue')['default']
     CampusPhoto: typeof import('./src/components/CampusPhoto.vue')['default']
     CampusRobot: typeof import('./src/components/CampusRobot.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']

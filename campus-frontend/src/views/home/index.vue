@@ -20,7 +20,7 @@
 
       <div ref="messageListRef" class="message-list" @scroll="handleMessageScroll">
         <div v-if="!messages.length" class="welcome-panel">
-          <div class="welcome-visual"><CampusPhoto class="welcome-art" src="/assets/jiangning-aerial.jpg" alt="河海大学江宁校区航拍图" /><CampusRobot class="welcome-robot" /></div>
+          <div class="welcome-visual"><CampusPhoto class="welcome-art" src="/assets/jiangning-aerial.jpg" alt="河海大学江宁校区航拍图" /></div>
           <h2>你好，我是河海智问</h2>
           <p>我可以帮你解答校园学习、生活和办事相关问题</p>
           <div class="suggestions">
@@ -117,7 +117,6 @@ import { streamChat, type SSEEvent } from '@/utils/sse'
 import { useUserStore } from '@/stores/user'
 import type { ActiveChatStream, AnswerCorrection, AnswerKnowledgeTask, ChatMessage, Conversation, SourceRef } from '@/types'
 import CampusPhoto from '@/components/CampusPhoto.vue'
-import CampusRobot from '@/components/CampusRobot.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
 const userStore = useUserStore()

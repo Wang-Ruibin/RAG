@@ -3,7 +3,6 @@
     <el-aside :width="appStore.sidebarCollapsed ? '76px' : '260px'" class="app-sidebar">
       <div class="brand-block">
         <AppLogo :compact="appStore.sidebarCollapsed" />
-        <div v-if="!appStore.sidebarCollapsed" class="brand-platform"><strong>河海智问</strong><span>校园知识智能问答平台</span></div>
       </div>
 
       <el-menu :default-active="route.path" :collapse="appStore.sidebarCollapsed" :collapse-transition="false" router class="nav-menu">

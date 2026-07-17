@@ -2,7 +2,7 @@
   <div :class="['app-logo', { compact }]">
     <img src="/assets/hhu-emblem.jpg" alt="河海大学校徽" />
     <div v-if="!compact" class="app-logo__text">
-      <strong>河海大学</strong>
+      <strong>河海智问</strong>
       <span>HOHAI UNIVERSITY</span>
     </div>
   </div>

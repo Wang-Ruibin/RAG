@@ -75,7 +75,7 @@
                   </template>
                   <div v-for="(s, si) in msg.sources" :key="si" class="source-item">
                     <div class="source-header">
-                      <span class="source-badge">S{{ si + 1 }}</span>
+                      <span :class="['source-badge', { 'source-badge--web': s.source_type === 'WEB_SEARCH' }]">{{ sourceBadge(s, si) }}</span>
                       <span class="source-doc-title">{{ s.title }}</span>
                       <span v-if="s.score" class="source-score">{{ (s.score * 100).toFixed(0) }}%</span>
                     </div>
@@ -84,6 +84,57 @@
                   </div>
                 </el-collapse-item>
               </el-collapse>
+            </div>
+
+            <!-- 操作栏：复制 / 点赞入库 / 点踩纠错 -->
+            <div v-if="msg.role === 'ASSISTANT' && msg.content && msg.status === 'COMPLETE'" class="message-actions">
+              <el-tag v-if="msg.knowledge_task" size="small" :type="taskTagType(msg.knowledge_task.status)" effect="light" round>
+                {{ taskTagText(msg.knowledge_task.status) }}
+              </el-tag>
+              <el-tag v-if="msg.correction" size="small" :type="correctionTagType(msg.correction.status)" effect="light" round>
+                {{ correctionTagText(msg.correction.status) }}
+              </el-tag>
+              <el-tooltip content="复制此回答" placement="top">
+                <button class="action-btn" @click="copyAnswer(msg.content)">
+                  <el-icon><DocumentCopy /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip content="此答案准确，加入知识库" placement="top">
+                <button class="action-btn" :disabled="!canAddToKnowledge(msg)" @click="likeMessage(msg)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+                  </svg>
+                </button>
+              </el-tooltip>
+              <el-tooltip content="此答案不准确，我来提供答案" placement="top">
+                <button class="action-btn" :disabled="!canCorrect(msg)" @click="startCorrection(msg)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" />
+                  </svg>
+                </button>
+              </el-tooltip>
+            </div>
+
+            <!-- 纠错编辑框 -->
+            <div v-if="msg.id != null && correctingId === msg.id" class="correction-editor">
+              <el-input
+                v-model="correctionDraft"
+                type="textarea"
+                :autosize="{ minRows: 3, maxRows: 8 }"
+                maxlength="6000"
+                show-word-limit
+                placeholder="请输入你认为准确的答案，提交后由管理员审核"
+              />
+              <div class="correction-actions">
+                <el-button size="small" @click="cancelCorrection">取消</el-button>
+                <el-button
+                  size="small"
+                  type="primary"
+                  :loading="correctionSubmitting"
+                  :disabled="correctionDraft.trim().length < 2"
+                  @click="submitCorrectionDraft(msg)"
+                >提交纠错</el-button>
+              </div>
             </div>
           </div>
         </div>
@@ -129,12 +180,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted, watch } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
-import { listConversations, getConversation, deleteConversation } from '@/api/qa'
+import {
+  listConversations, getConversation, deleteConversation,
+  createKnowledgeTask, getKnowledgeTask, submitCorrection,
+} from '@/api/qa'
 import { streamChat, type SSEEvent } from '@/utils/sse'
-import type { Conversation, ChatMessage, SourceRef } from '@/types'
-import { Promotion, ChatDotRound, Document, Delete, Plus, CloseBold, WarningFilled } from '@element-plus/icons-vue'
+import type { Conversation, ChatMessage, SourceRef, AnswerKnowledgeTask, AnswerCorrection } from '@/types'
+import { Promotion, ChatDotRound, Document, DocumentCopy, Delete, Plus, CloseBold, WarningFilled } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -147,10 +202,14 @@ const loadConversationList = () => listConversations().then(r => conversations.v
 
 // ── 消息 ──
 interface LocalMessage {
+  id?: number
   role: 'USER' | 'ASSISTANT'
   content: string
   sources: SourceRef[]
   status: 'STREAMING' | 'COMPLETE' | 'CANCELLED' | 'ERROR'
+  answer_origin?: ChatMessage['answer_origin']
+  knowledge_task?: AnswerKnowledgeTask | null
+  correction?: AnswerCorrection | null
 }
 const messages = ref<LocalMessage[]>([])
 const msgListRef = ref<HTMLElement>()
@@ -177,6 +236,12 @@ function renderMarkdown(text: string) {
   return DOMPurify.sanitize(marked.parse(text) as string)
 }
 
+// ── 引用角标：知识库 S、网页 W，编号优先用后端 citation_index 对齐正文 ──
+function sourceBadge(s: SourceRef, index: number) {
+  const prefix = s.source_type === 'WEB_SEARCH' ? 'W' : 'S'
+  return `${prefix}${s.citation_index ?? index + 1}`
+}
+
 // ── 滚动到底 ──
 async function scrollToBottom() {
   await nextTick()
@@ -195,10 +260,14 @@ async function openConversation(id: number) {
     const res = await getConversation(id)
     activeId.value = id
     messages.value = (res.data.messages || []).map(m => ({
+      id: m.id,
       role: m.role,
       content: m.content,
       sources: m.sources || [],
       status: (m.status as LocalMessage['status']) || 'COMPLETE',
+      answer_origin: m.answer_origin ?? null,
+      knowledge_task: m.knowledge_task ?? null,
+      correction: m.correction ?? null,
     }))
     streamError.value = ''
     await scrollToBottom()
@@ -220,6 +289,10 @@ function handleSSEEvent(event: SSEEvent) {
   switch (event.event) {
     case 'start':
       activeId.value = Number(event.data.conversation_id)
+      // 记录助手消息 ID，点赞/纠错要用
+      messages.value = messages.value.map((m, i) =>
+        i === messages.value.length - 1 ? { ...m, id: Number(event.data.message_id) } : m
+      )
       break
     case 'status':
       streamStatus.value = String(event.data.message || '正在处理...')
@@ -241,7 +314,9 @@ function handleSSEEvent(event: SSEEvent) {
       break
     case 'done':
       messages.value = messages.value.map((m, i) =>
-        i === messages.value.length - 1 ? { ...m, status: 'COMPLETE' } : m
+        i === messages.value.length - 1
+          ? { ...m, status: 'COMPLETE', answer_origin: (event.data.answer_origin as LocalMessage['answer_origin']) ?? null }
+          : m
       )
       loadConversationList()
       break
@@ -252,6 +327,127 @@ function handleSSEEvent(event: SSEEvent) {
       )
       break
   }
+}
+
+// ── 复制 / 点赞沉淀 / 点踩纠错 ──
+const likeSubmitting = ref<Set<number>>(new Set())
+const correctingId = ref<number | null>(null)
+const correctionDraft = ref('')
+const correctionSubmitting = ref(false)
+const pollTimers = new Map<number, ReturnType<typeof setInterval>>()
+
+async function copyAnswer(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+function patchMessage(id: number, patch: Partial<LocalMessage>) {
+  messages.value = messages.value.map(m => (m.id === id ? { ...m, ...patch } : m))
+}
+
+// 只有已完成、有 ID、非拒答、未沉淀过的回答才能点赞（对齐后端校验）
+function canAddToKnowledge(msg: LocalMessage) {
+  return msg.id != null
+    && msg.status === 'COMPLETE'
+    && msg.answer_origin !== 'NO_ANSWER'
+    && !msg.knowledge_task
+    && !likeSubmitting.value.has(msg.id)
+}
+
+async function likeMessage(msg: LocalMessage) {
+  if (!canAddToKnowledge(msg) || msg.id == null) return
+  const id = msg.id
+  likeSubmitting.value = new Set(likeSubmitting.value).add(id)
+  try {
+    const res = await createKnowledgeTask(id)
+    patchMessage(id, { knowledge_task: res.data })
+    ElMessage.success('已加入知识库处理队列')
+    pollKnowledgeTask(id)
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || err?.message || '提交失败')
+  } finally {
+    const next = new Set(likeSubmitting.value)
+    next.delete(id)
+    likeSubmitting.value = next
+  }
+}
+
+// 轮询沉淀任务直到出结果（3s 一次，最多 20 次）
+function pollKnowledgeTask(messageId: number) {
+  let count = 0
+  stopPoll(messageId)
+  const timer = setInterval(async () => {
+    count += 1
+    try {
+      const res = await getKnowledgeTask(messageId)
+      if (res.data) patchMessage(messageId, { knowledge_task: res.data })
+      const status = res.data?.status
+      if (status === 'COMPLETE' || status === 'FAILED' || count >= 20) {
+        stopPoll(messageId)
+        if (status === 'COMPLETE') ElMessage.success('答案已沉淀进知识库')
+        if (status === 'FAILED') ElMessage.warning('答案沉淀失败：' + (res.data?.error || '未知原因'))
+      }
+    } catch {
+      stopPoll(messageId)
+    }
+  }, 3000)
+  pollTimers.set(messageId, timer)
+}
+
+function stopPoll(messageId: number) {
+  const timer = pollTimers.get(messageId)
+  if (timer) { clearInterval(timer); pollTimers.delete(messageId) }
+}
+
+// 无纠错记录、或上次被拒/失败时可再次纠错
+function canCorrect(msg: LocalMessage) {
+  if (msg.id == null || msg.status !== 'COMPLETE') return false
+  const st = msg.correction?.status
+  return !st || st === 'REJECTED' || st === 'FAILED'
+}
+
+function startCorrection(msg: LocalMessage) {
+  if (!canCorrect(msg) || msg.id == null) return
+  correctingId.value = msg.id
+  correctionDraft.value = ''
+}
+
+function cancelCorrection() {
+  correctingId.value = null
+  correctionDraft.value = ''
+}
+
+async function submitCorrectionDraft(msg: LocalMessage) {
+  if (msg.id == null || correctionSubmitting.value) return
+  correctionSubmitting.value = true
+  try {
+    const res = await submitCorrection(msg.id, correctionDraft.value.trim())
+    patchMessage(msg.id, { correction: res.data })
+    ElMessage.success('纠错已提交，等待管理员审核')
+    cancelCorrection()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || err?.message || '提交失败')
+  } finally {
+    correctionSubmitting.value = false
+  }
+}
+
+// ── 状态标签 ──
+function taskTagText(status: AnswerKnowledgeTask['status']) {
+  return { QUEUED: '沉淀排队中', PROCESSING: '沉淀处理中', COMPLETE: '已入知识库', FAILED: '沉淀失败' }[status] || status
+}
+function taskTagType(status: AnswerKnowledgeTask['status']) {
+  return ({ QUEUED: 'info', PROCESSING: 'warning', COMPLETE: 'success', FAILED: 'danger' } as const)[status] || 'info'
+}
+function correctionTagText(status: AnswerCorrection['status']) {
+  return { PENDING: '纠错待审核', PROCESSING: '纠错处理中', APPROVED: '纠错已采纳', REJECTED: '纠错被拒绝', FAILED: '纠错失败' }[status] || status
+}
+function correctionTagType(status: AnswerCorrection['status']) {
+  return ({ PENDING: 'info', PROCESSING: 'warning', APPROVED: 'success', REJECTED: 'danger', FAILED: 'danger' } as const)[status] || 'info'
 }
 
 // ── 发送 ──
@@ -304,7 +500,15 @@ function onEnter(e: KeyboardEvent) {
 
 watch(() => messages.value.length, () => scrollToBottom())
 
+// 切换会话时收起纠错编辑框
+watch(activeId, () => cancelCorrection())
+
 onMounted(() => loadConversationList())
+
+onUnmounted(() => {
+  pollTimers.forEach(timer => clearInterval(timer))
+  pollTimers.clear()
+})
 </script>
 
 <style scoped lang="scss">
@@ -665,14 +869,19 @@ onMounted(() => loadConversationList())
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 20px;
+      min-width: 20px;
       height: 20px;
+      padding: 0 4px;
       background: var(--grad);
       color: #fff;
       border-radius: 5px;
       font-size: 11px;
       font-weight: 600;
       flex-shrink: 0;
+
+      &--web {
+        background: linear-gradient(135deg, #4a7fb5, #6b9bd1);
+      }
     }
     .source-doc-title {
       flex: 1;
@@ -706,6 +915,58 @@ onMounted(() => loadConversationList())
       text-decoration: none;
       &:hover { text-decoration: underline; }
     }
+  }
+}
+
+// ========== 操作栏 / 纠错编辑框 ==========
+.message-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: none;
+    border-radius: 7px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    svg { width: 15px; height: 15px; }
+    .el-icon { font-size: 15px; }
+
+    &:hover:not(:disabled) {
+      color: var(--accent);
+      background: var(--accent-subtle);
+    }
+    &:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.correction-editor {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+
+  .correction-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
   }
 }
 

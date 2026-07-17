@@ -152,6 +152,7 @@ INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component,
 (3,  '系统管理',   0, 3, '/system',      NULL,              'M', NULL,           'setting',    '1', '1'),
 -- 知识库子菜单
 (21, '文档管理',   2, 2, '/knowledge/document', 'knowledge/document/index', 'C', 'knowledge:document:list',   'document','1', '1'),
+(22, '纠错审核',   2, 3, '/knowledge/correction', 'knowledge/correction/index', 'C', 'knowledge:correction:review', 'EditPen', '1', '1'),
 -- 系统管理子菜单
 (30, '用户管理',   3, 1, '/system/user', 'system/user/index',       'C', 'system:user:list',   'user',    '1', '1'),
 (31, '角色管理',   3, 2, '/system/role', 'system/role/index',       'C', 'system:role:list',   'Avatar',  '1', '1'),

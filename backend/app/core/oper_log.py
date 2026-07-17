@@ -37,6 +37,9 @@ _RULES: list[tuple[str, re.Pattern[str], str, int]] = [
     ("POST", re.compile(r"^/api/chat(/stream)?$"), "智能问答-提问", 0),
     ("DELETE", re.compile(r"^/api/conversations/\d+$"), "智能问答-删除会话", 3),
     ("POST", re.compile(r"^/api/messages/\d+/knowledge-task$"), "智能问答-答案沉淀", 1),
+    ("POST", re.compile(r"^/api/messages/\d+/correction$"), "智能问答-提交纠错", 1),
+    ("POST", re.compile(r"^/api/admin/answer-corrections/\d+/approve$"), "纠错审核-通过", 2),
+    ("POST", re.compile(r"^/api/admin/answer-corrections/\d+/reject$"), "纠错审核-拒绝", 2),
 ]
 
 _INSERT_SQL = text(

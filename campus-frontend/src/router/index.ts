@@ -32,6 +32,12 @@ const router = createRouter({
           meta: { title: '知识库管理', icon: 'Document' }
         },
         {
+          path: 'knowledge/correction',
+          name: 'KnowledgeCorrection',
+          component: () => import('@/views/knowledge/correction/index.vue'),
+          meta: { title: '纠错审核', icon: 'EditPen' }
+        },
+        {
           path: 'system/user',
           name: 'SystemUser',
           component: () => import('@/views/system/user/index.vue'),

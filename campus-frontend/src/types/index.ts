@@ -96,6 +96,50 @@ export interface ChatMessage {
   sources: SourceRef[]
   status?: 'STREAMING' | 'COMPLETE' | 'CANCELLED' | 'ERROR'
   latency_ms?: number | null
+  answer_origin?: 'KNOWLEDGE_BASE' | 'WEB_SEARCH' | 'HYBRID' | 'NO_ANSWER' | null
+  knowledge_task?: AnswerKnowledgeTask | null
+  correction?: AnswerCorrection | null
+}
+
+// 答案沉淀任务（点赞入库）
+export interface AnswerKnowledgeTask {
+  id: number
+  assistant_message_id: number | null
+  status: 'QUEUED' | 'PROCESSING' | 'COMPLETE' | 'FAILED'
+  document_id: number | null
+  qa_entry_id: number | null
+  cleaned_title: string | null
+  error: string | null
+  created_at: string
+  updated_at: string
+  finished_at: string | null
+}
+
+// 答案纠错
+export interface AnswerCorrection {
+  id: number
+  assistant_message_id: number | null
+  status: 'PENDING' | 'PROCESSING' | 'APPROVED' | 'REJECTED' | 'FAILED'
+  proposed_answer: string
+  reviewed_question: string | null
+  reviewed_answer: string | null
+  review_note: string | null
+  approved_document_id: number | null
+  error: string | null
+  created_at: string
+  updated_at: string
+  reviewed_at: string | null
+}
+
+// 纠错审核（管理端扩展字段）
+export interface AdminAnswerCorrection extends AnswerCorrection {
+  user_id: number
+  contributor_name: string | null
+  contributor_email: string | null
+  original_question: string | null
+  original_answer: string | null
+  original_sources: SourceRef[]
+  source_document_ids: number[]
 }
 
 // 引用来源
@@ -108,6 +152,7 @@ export interface SourceRef {
   score: number
   snippet: string
   citation_index?: number
+  source_type?: 'KNOWLEDGE_BASE' | 'WEB_SEARCH' | string
 }
 
 // 知识库文档（Python 模型）

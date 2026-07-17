@@ -224,13 +224,96 @@ class ChatService:
             db.commit()
             raise
 
+    # ── Agent flow ──────────────────────────────────────────────────
+
+    def _agent_flow(
+        self,
+        conversation_id: int,
+        assistant_id: int,
+        question: str,
+        history: list[dict[str, str]],
+        web_search_enabled: bool,
+    ) -> Iterator[str]:
+        from app.agent.loop import agent_loop
+
+        started = time.perf_counter()
+        yield sse(
+            "start", {"conversation_id": conversation_id, "message_id": assistant_id}
+        )
+        full_answer = ""
+        final_sources: list[dict[str, object]] = []
+
+        try:
+            for event_str in agent_loop(
+                question, history, web_search_enabled=web_search_enabled
+            ):
+                yield event_str
+                if event_str.startswith("event: delta\n"):
+                    for line in event_str.split("\n"):
+                        if line.startswith("data: "):
+                            try:
+                                payload = json.loads(line[6:])
+                                full_answer += payload.get("text", "")
+                            except (json.JSONDecodeError, KeyError):
+                                pass
+                            break
+                elif event_str.startswith("event: sources\n"):
+                    for line in event_str.split("\n"):
+                        if line.startswith("data: "):
+                            try:
+                                payload = json.loads(line[6:])
+                                final_sources = payload.get("items", [])
+                            except (json.JSONDecodeError, KeyError):
+                                pass
+                            break
+                elif event_str.startswith("event: done\n"):
+                    latency = int((time.perf_counter() - started) * 1000)
+                    self._finalize(
+                        assistant_id,
+                        content=full_answer,
+                        sources=final_sources,
+                        status=MessageStatus.COMPLETE,
+                        latency_ms=latency,
+                    )
+        except GeneratorExit:
+            self._finalize(
+                assistant_id,
+                content=full_answer,
+                sources=final_sources,
+                status=MessageStatus.CANCELLED,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            )
+            raise
+        except Exception:
+            logger.exception("Agent flow failed: assistant_id=%s", assistant_id)
+            self._finalize(
+                assistant_id,
+                content=full_answer,
+                sources=final_sources,
+                status=MessageStatus.ERROR,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            )
+            yield sse(
+                "error",
+                {"code": "AGENT_FAILED", "message": "回答生成失败，请稍后重试"},
+            )
+
     def stream(
         self,
         conversation_id: int,
         assistant_id: int,
         question: str,
         history: list[dict[str, str]],
+        use_agent: bool = False,
+        web_search_enabled: bool = True,
     ) -> Iterator[str]:
+        if use_agent:
+            logger.info("Agent mode triggered for question=%s", question[:50])
+            yield from self._agent_flow(
+                conversation_id, assistant_id, question, history, web_search_enabled
+            )
+            return
+
         started = time.perf_counter()
         yield sse("start", {"conversation_id": conversation_id, "message_id": assistant_id})
         full_answer = ""

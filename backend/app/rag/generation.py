@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from typing import Any
 
 from openai import OpenAI
 
@@ -18,6 +19,21 @@ SYSTEM_PROMPT = """你是河海大学校园知识问答助手。
 4. 资料不足时回答“根据现有校园知识库，暂未找到相关信息”，并说明缺少什么。
 5. 对招生、校历、政策等时效信息说明资料日期，并建议通过来源链接核实最新版本。
 6. 使用简洁、友好、专业的中文和清晰的 Markdown。
+"""
+
+AGENT_SYSTEM_PROMPT = """你是河海大学校园知识问答助手，拥有调用工具的能力。
+
+你必须遵守：
+1. 面对用户问题，逐步思考需要什么信息，然后选择合适的工具获取信息。
+2. 你有两个工具可用：
+   - knowledge_search：搜索校园知识库，适用于校史校训、院系专业、政策文件等内部知识。
+   - web_search：搜索互联网，适用于招生简章、新闻公告、活动通知等时效性信息。
+3. 每次调用工具后，仔细分析工具返回的结果，从中提取有用信息。
+4. 如果需要多种信息才能完整回答问题，可以多次调用不同工具。
+5. 根据所有已获取的信息，综合整理出有依据的回答。
+6. 引用来源：知识库来源用 [S1]、[S2] 等标注，联网来源用 [W1]、[W2] 等标注。不得编造来源编号。
+7. 如果所有工具都无法找到足够信息，如实告知用户缺少什么信息。
+8. 使用简洁、友好、专业的中文和清晰的 Markdown。
 """
 
 
@@ -91,6 +107,54 @@ class DeepSeekGenerator:
             if delta:
                 yield delta
 
+    def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        stream: bool = False,
+    ) -> dict | Iterator[str]:
+        """Call LLM with optional tool definitions.
+
+        Non-streaming: returns dict with ``content`` and optionally ``tool_calls``.
+        Streaming: yields content deltas as strings (no tool call handling in
+        stream mode — the agent loop uses non-streaming for tool-call rounds).
+        """
+        kwargs: dict[str, Any] = {
+            "model": settings.llm_model,
+            "temperature": settings.llm_temperature,
+            "max_tokens": settings.llm_max_tokens,
+            "messages": messages,
+        }
+        if tools:
+            kwargs["tools"] = tools
+
+        if stream:
+            return self._chat_stream(kwargs)
+
+        response = self._get_client().chat.completions.create(**kwargs)
+        message = response.choices[0].message
+        result: dict[str, Any] = {"content": message.content or ""}
+        if message.tool_calls:
+            result["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": tc.type,
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in message.tool_calls
+            ]
+        return result
+
+    def _chat_stream(self, kwargs: dict) -> Iterator[str]:
+        stream = self._get_client().chat.completions.create(stream=True, **kwargs)
+        for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta and delta.content:
+                yield delta.content
+
 
 def validate_citations(answer: str, source_count: int) -> tuple[str, list[int]]:
     cited: list[int] = []
@@ -105,6 +169,34 @@ def validate_citations(answer: str, source_count: int) -> tuple[str, list[int]]:
 
     cleaned = re.sub(r"\[S(\d+)\]", replace, answer)
     return cleaned.strip(), cited
+
+
+def validate_all_citations(
+    answer: str, s_count: int, w_count: int
+) -> tuple[str, list[int], list[int]]:
+    """Validate both [S] (knowledge) and [W] (web) citations."""
+    cited_s: list[int] = []
+    cited_w: list[int] = []
+
+    def replace_s(m: re.Match[str]) -> str:
+        v = int(m.group(1))
+        if 1 <= v <= s_count:
+            if v not in cited_s:
+                cited_s.append(v)
+            return m.group(0)
+        return ""
+
+    def replace_w(m: re.Match[str]) -> str:
+        v = int(m.group(1))
+        if 1 <= v <= w_count:
+            if v not in cited_w:
+                cited_w.append(v)
+            return m.group(0)
+        return ""
+
+    cleaned = re.sub(r"\[S(\d+)\]", replace_s, answer)
+    cleaned = re.sub(r"\[W(\d+)\]", replace_w, cleaned)
+    return cleaned.strip(), cited_s, cited_w
 
 
 generator = DeepSeekGenerator()

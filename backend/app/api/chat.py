@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
+from app.core.config import settings
 from app.core.responses import success
 from app.models.orm import Conversation, Message
 from app.models.schemas import ChatRequest
@@ -49,6 +50,8 @@ def chat_stream(body: ChatRequest, db: Database, user: CurrentUser) -> Streaming
             assistant.id,
             body.question.strip(),
             history,
+            use_agent=body.use_agent,
+            web_search_enabled=settings.web_search_enabled,
         ),
         media_type="text/event-stream",
         headers={

@@ -1,10 +1,16 @@
-import { DeleteOutlined, PlusOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import {
+  DeleteOutlined,
+  PlusOutlined,
+  SendOutlined,
+  StopOutlined,
+} from '@ant-design/icons'
 import { Alert, Button, Empty, Input, List, Popconfirm, Space, Spin, Typography, message } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../lib/api'
 import { streamChat, type SSEEvent } from '../lib/sse'
-import type { ChatMessage, Conversation, SourceRef } from '../types'
+import type { AgentStep, ChatMessage, Conversation, SourceRef } from '../types'
+import { AgentSteps } from '../components/AgentSteps'
 import { SourceCards } from '../components/SourceCards'
 
 export function ChatPage() {
@@ -16,6 +22,7 @@ export function ChatPage() {
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [streamError, setStreamError] = useState('')
   const [streamStatus, setStreamStatus] = useState('')
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([])
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const deletingConversationIds = useRef(new Set<number>())
@@ -30,6 +37,7 @@ export function ChatPage() {
       const conversation = await api<Conversation>(`/api/conversations/${id}`)
       setActiveId(id)
       setMessages(conversation.messages || [])
+      setAgentSteps([])
       setStreamError('')
     } catch (reason) {
       void message.error(reason instanceof Error ? reason.message : '加载失败')
@@ -44,8 +52,21 @@ export function ChatPage() {
       setActiveId(id)
     } else if (event.event === 'status') {
       setStreamStatus(String(event.data.message || '正在处理…'))
+    } else if (event.event === 'agent_step') {
+      const step = event.data as unknown as AgentStep
+      setAgentSteps((prev) => [...prev, step])
     } else if (event.event === 'sources') {
-      const sources = (event.data.items || []) as SourceRef[]
+      const items = (event.data.items || []) as Record<string, unknown>[]
+      const sources: SourceRef[] = items.map((item) => ({
+        chunk_id: 0,
+        document_id: 0,
+        title: String(item.title || ''),
+        source_url: String(item.url || item.source_url || '') || null,
+        snippet: String(item.content || item.snippet || ''),
+        score: Number(item.score || 0),
+        citation_index: parseInt(String(item.citation || '').replace(/\D/g, '')) || 0,
+        type: (item.type as 'knowledge' | 'web') || 'knowledge',
+      }))
       setMessages((current) => current.map((item, index) =>
         index === current.length - 1 ? { ...item, sources } : item,
       ))
@@ -75,6 +96,7 @@ export function ChatPage() {
     setSending(true)
     setStreamError('')
     setStreamStatus('正在连接问答服务…')
+    setAgentSteps([])
     setMessages((current) => [
       ...current,
       { role: 'USER', content: question, sources: [], status: 'COMPLETE' },
@@ -83,7 +105,7 @@ export function ChatPage() {
     const controller = new AbortController()
     abortRef.current = controller
     try {
-      await streamChat(question, activeId, controller.signal, handleEvent)
+      await streamChat(question, activeId, controller.signal, handleEvent, true)
       await loadConversations()
     } catch (reason) {
       const status = controller.signal.aborted ? 'CANCELLED' : 'ERROR'
@@ -116,7 +138,7 @@ export function ChatPage() {
   return (
     <div className="chat-layout">
       <aside className="conversation-panel">
-        <Button type="primary" icon={<PlusOutlined />} block onClick={() => { setActiveId(null); setMessages([]) }}>
+        <Button type="primary" icon={<PlusOutlined />} block onClick={() => { setActiveId(null); setMessages([]); setAgentSteps([]) }}>
           新对话
         </Button>
         <List
@@ -159,10 +181,13 @@ export function ChatPage() {
               <div className="message-role">{item.role === 'USER' ? '你' : '河海智答'}</div>
               <div className="message-body">
                 {item.role === 'ASSISTANT' ? (
-                  item.content ? <ReactMarkdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>{item.content}</ReactMarkdown>
-                    : item.status === 'ERROR' ? <Typography.Text type="danger">回答生成失败，请重试。</Typography.Text>
-                      : item.status === 'CANCELLED' ? <Typography.Text type="secondary">本次回答已停止。</Typography.Text>
-                        : <Space><Spin size="small" /><Typography.Text type="secondary">{index === messages.length - 1 ? streamStatus || '正在处理…' : '正在处理…'}</Typography.Text></Space>
+                  <>
+                    {agentSteps.length > 0 && index === messages.length - 1 ? <AgentSteps steps={agentSteps} /> : null}
+                    {item.content ? <ReactMarkdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>{item.content}</ReactMarkdown>
+                      : item.status === 'ERROR' ? <Typography.Text type="danger">回答生成失败，请重试。</Typography.Text>
+                        : item.status === 'CANCELLED' ? <Typography.Text type="secondary">本次回答已停止。</Typography.Text>
+                          : <Space><Spin size="small" /><Typography.Text type="secondary">{index === messages.length - 1 ? streamStatus || '正在处理…' : '正在处理…'}</Typography.Text></Space>}
+                  </>
                 ) : <Typography.Paragraph>{item.content}</Typography.Paragraph>}
                 {item.content ? <SourceCards sources={item.sources || []} /> : null}
               </div>

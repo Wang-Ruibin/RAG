@@ -10,14 +10,18 @@ export interface User {
 }
 
 export interface SourceRef {
-  chunk_id: number
-  document_id: number
+  chunk_id?: number
+  document_id?: number
   title: string
   source_url?: string | null
   published_at?: string | null
-  score: number
-  snippet: string
+  score?: number
+  snippet?: string
   citation_index?: number
+  type?: 'knowledge' | 'web'
+  url?: string
+  content?: string
+  citation?: string
 }
 
 export interface ChatMessage {
@@ -27,6 +31,16 @@ export interface ChatMessage {
   sources: SourceRef[]
   status?: 'STREAMING' | 'COMPLETE' | 'CANCELLED' | 'ERROR'
   latency_ms?: number | null
+  agent_steps?: AgentStep[]
+}
+
+export interface AgentStep {
+  type: 'tool_call' | 'tool_result'
+  tool_name: string
+  args?: Record<string, unknown>
+  result?: { summary: string; success: boolean }
+  status: 'running' | 'success' | 'error'
+  iteration: number
 }
 
 export interface Conversation {

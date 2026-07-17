@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     reranker_model: str = "BAAI/bge-reranker-base"
     reranker_max_length: int = 256
     rerank_candidate_k: int = 5
-    model_local_files_only: bool = False
+    model_local_files_only: bool = True
     rag_prewarm: bool = True
     rerank_enabled: bool = True
     retrieval_min_score: float = 0.7256
@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     fusion_top_k: int = 12
     context_top_k: int = 5
     rrf_k: int = 60
+
+    # Agent settings
+    agent_enabled: bool = False
+    agent_max_iterations: int = 3
+    web_search_enabled: bool = False
+    web_search_provider: Literal["bing", "bing_html", "duckduckgo"] = "bing_html"
+    web_search_api_key: SecretStr = SecretStr("")
+    web_search_max_results: int = 5
 
     chunk_size: int = 500
     chunk_overlap: int = 80

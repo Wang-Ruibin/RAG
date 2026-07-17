@@ -81,6 +81,7 @@ class SourceRef(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(min_length=2, max_length=1000)
     conversation_id: int | None = None
+    use_agent: bool = False
 
 
 class ChatResult(BaseModel):

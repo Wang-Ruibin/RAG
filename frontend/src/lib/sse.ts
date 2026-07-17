@@ -31,6 +31,7 @@ export async function streamChat(
   conversationId: number | null,
   signal: AbortSignal,
   onEvent: (event: SSEEvent) => void,
+  useAgent?: boolean,
 ): Promise<void> {
   const token = localStorage.getItem('campusqa_token')
   const response = await fetch('/api/chat/stream', {
@@ -39,7 +40,7 @@ export async function streamChat(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ question, conversation_id: conversationId }),
+    body: JSON.stringify({ question, conversation_id: conversationId, use_agent: useAgent ?? false }),
     signal,
   })
   if (!response.ok || !response.body) {

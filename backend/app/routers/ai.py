@@ -1,5 +1,6 @@
 """RAG 问答 API 路由 — 对接 ai_service"""
 
+import asyncio
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Header
@@ -100,11 +101,13 @@ async def query_stream(
     question: str,
     top_k: int = 5,
     history: str = "",
+    speed: int = 10,
     user_id: int = Depends(_get_current_user),
 ):
     """SSE 流式 RAG 问答查询
 
     ``history`` 为 JSON 编码的历史轮次数组，用于多轮对话指代消解。
+    ``speed`` 为令牌节流速度（token/秒），默认 10，范围 1-100。
     """
     import json
 
@@ -122,10 +125,35 @@ async def query_stream(
             parsed_history = []
 
     async def event_generator():
+        token_buffer: list[str] = []
+        done_event: str | None = None
+        speed_tokens_per_sec: int = max(1, min(speed, 100))
+
         async for event in RAGService.query_stream(
             question=question, top_k=top_k, history=parsed_history
         ):
-            yield f"data: {event}\n\n"
+            try:
+                obj = json.loads(event)
+            except (ValueError, TypeError):
+                yield f"data: {event}\n\n"
+                continue
+
+            if "content" in obj:
+                token_buffer.append(event)
+            elif "data" in obj:
+                yield f"data: {event}\n\n"
+            elif "answer" in obj:
+                done_event = event
+            else:
+                yield f"data: {event}\n\n"
+
+        delay = 1.0 / speed_tokens_per_sec
+        for token in token_buffer:
+            yield f"data: {token}\n\n"
+            await asyncio.sleep(delay)
+
+        if done_event:
+            yield f"data: {done_event}\n\n"
 
     return StreamingResponse(
         event_generator(),

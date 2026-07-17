@@ -1,10 +1,10 @@
-import { DeleteOutlined, PlusOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Input, List, Popconfirm, Space, Spin, Typography, message } from 'antd'
+import { BookOutlined, DeleteOutlined, PlusOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { Alert, Button, Empty, Input, List, Popconfirm, Space, Spin, Tag, Typography, message } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../lib/api'
 import { streamChat, type SSEEvent } from '../lib/sse'
-import type { ChatMessage, Conversation, SourceRef } from '../types'
+import type { AnswerKnowledgeTask, ChatMessage, Conversation, SourceRef } from '../types'
 import { SourceCards } from '../components/SourceCards'
 
 export function ChatPage() {
@@ -16,9 +16,11 @@ export function ChatPage() {
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [streamError, setStreamError] = useState('')
   const [streamStatus, setStreamStatus] = useState('')
+  const [knowledgeSubmitting, setKnowledgeSubmitting] = useState<Set<number>>(new Set())
   const abortRef = useRef<AbortController | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const deletingConversationIds = useRef(new Set<number>())
+  const pollingTaskIds = useRef(new Set<number>())
 
   const loadConversations = () => api<Conversation[]>('/api/conversations').then(setConversations)
   useEffect(() => { void loadConversations() }, [])
@@ -30,6 +32,10 @@ export function ChatPage() {
       const conversation = await api<Conversation>(`/api/conversations/${id}`)
       setActiveId(id)
       setMessages(conversation.messages || [])
+      ;(conversation.messages || []).forEach((item) => {
+        const task = item.knowledge_task
+        if (task && ['QUEUED', 'PROCESSING'].includes(task.status)) pollKnowledgeTask(task.id)
+      })
       setStreamError('')
     } catch (reason) {
       void message.error(reason instanceof Error ? reason.message : '加载失败')
@@ -41,13 +47,18 @@ export function ChatPage() {
   function handleEvent(event: SSEEvent) {
     if (event.event === 'start') {
       const id = Number(event.data.conversation_id)
+      const messageId = Number(event.data.message_id)
       setActiveId(id)
+      setMessages((current) => current.map((item, index) =>
+        index === current.length - 1 && Number.isFinite(messageId) ? { ...item, id: messageId } : item,
+      ))
     } else if (event.event === 'status') {
       setStreamStatus(String(event.data.message || '正在处理…'))
     } else if (event.event === 'sources') {
       const sources = (event.data.items || []) as SourceRef[]
+      const answer_origin = event.data.answer_origin as ChatMessage['answer_origin']
       setMessages((current) => current.map((item, index) =>
-        index === current.length - 1 ? { ...item, sources } : item,
+        index === current.length - 1 ? { ...item, sources, answer_origin: answer_origin ?? item.answer_origin } : item,
       ))
     } else if (event.event === 'delta') {
       const text = String(event.data.text || '')
@@ -56,8 +67,9 @@ export function ChatPage() {
       ))
     } else if (event.event === 'done') {
       setStreamStatus('')
+      const answer_origin = event.data.answer_origin as ChatMessage['answer_origin']
       setMessages((current) => current.map((item, index) =>
-        index === current.length - 1 ? { ...item, status: 'COMPLETE' } : item,
+        index === current.length - 1 ? { ...item, status: 'COMPLETE', answer_origin: answer_origin ?? item.answer_origin } : item,
       ))
     } else if (event.event === 'error') {
       setStreamStatus('')
@@ -113,6 +125,71 @@ export function ChatPage() {
     }
   }
 
+  async function addToKnowledge(item: ChatMessage) {
+    if (!item.id || knowledgeSubmitting.has(item.id)) return
+    setKnowledgeSubmitting((current) => new Set(current).add(item.id as number))
+    try {
+      const task = await api<AnswerKnowledgeTask>(`/api/messages/${item.id}/knowledge-task`, {
+        method: 'POST',
+      })
+      setMessages((current) => current.map((messageItem) =>
+        messageItem.id === item.id ? { ...messageItem, knowledge_task: task } : messageItem,
+      ))
+      if (['QUEUED', 'PROCESSING'].includes(task.status)) pollKnowledgeTask(task.id)
+      void message.success('已加入知识库处理队列')
+    } catch (reason) {
+      void message.error(reason instanceof Error ? reason.message : '加入知识库失败')
+    } finally {
+      setKnowledgeSubmitting((current) => {
+        const next = new Set(current)
+        if (item.id) next.delete(item.id)
+        return next
+      })
+    }
+  }
+
+  function taskTag(task: AnswerKnowledgeTask) {
+    const mapping: Record<AnswerKnowledgeTask['status'], { text: string; color: string }> = {
+      QUEUED: { text: '知识库排队中', color: 'gold' },
+      PROCESSING: { text: '知识库处理中', color: 'blue' },
+      COMPLETE: { text: '已加入知识库', color: 'green' },
+      FAILED: { text: '加入知识库失败', color: 'red' },
+    }
+    return <Tag color={mapping[task.status].color}>{mapping[task.status].text}</Tag>
+  }
+
+  function mergeKnowledgeTask(task: AnswerKnowledgeTask) {
+    setMessages((current) => current.map((item) =>
+      item.id === task.assistant_message_id ? { ...item, knowledge_task: task } : item,
+    ))
+  }
+
+  function pollKnowledgeTask(taskId: number, attempt = 0) {
+    if (pollingTaskIds.current.has(taskId) && attempt === 0) return
+    pollingTaskIds.current.add(taskId)
+    window.setTimeout(() => {
+      api<AnswerKnowledgeTask>(`/api/knowledge-tasks/${taskId}`)
+        .then((task) => {
+          mergeKnowledgeTask(task)
+          if (['QUEUED', 'PROCESSING'].includes(task.status) && attempt < 60) {
+            pollKnowledgeTask(taskId, attempt + 1)
+          } else {
+            pollingTaskIds.current.delete(taskId)
+          }
+        })
+        .catch(() => pollingTaskIds.current.delete(taskId))
+    }, 2500)
+  }
+
+  function canAddToKnowledge(item: ChatMessage) {
+    return item.role === 'ASSISTANT'
+      && item.status === 'COMPLETE'
+      && Boolean(item.id)
+      && Boolean(item.content.trim())
+      && item.answer_origin !== 'NO_ANSWER'
+      && !item.knowledge_task
+  }
+
   return (
     <div className="chat-layout">
       <aside className="conversation-panel">
@@ -158,12 +235,29 @@ export function ChatPage() {
             <article className={`message ${item.role.toLowerCase()}`} key={`${item.id || 'local'}-${index}`}>
               <div className="message-role">{item.role === 'USER' ? '你' : '河海智答'}</div>
               <div className="message-body">
+                {item.role === 'ASSISTANT' && item.answer_origin === 'WEB_SEARCH' && (
+                  <Tag color="gold" className="answer-origin-tag">联网搜索回答</Tag>
+                )}
                 {item.role === 'ASSISTANT' ? (
                   item.content ? <ReactMarkdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>{item.content}</ReactMarkdown>
                     : item.status === 'ERROR' ? <Typography.Text type="danger">回答生成失败，请重试。</Typography.Text>
                       : item.status === 'CANCELLED' ? <Typography.Text type="secondary">本次回答已停止。</Typography.Text>
                         : <Space><Spin size="small" /><Typography.Text type="secondary">{index === messages.length - 1 ? streamStatus || '正在处理…' : '正在处理…'}</Typography.Text></Space>
                 ) : <Typography.Paragraph>{item.content}</Typography.Paragraph>}
+                {item.role === 'ASSISTANT' && item.content && (
+                  <div className="message-actions">
+                    {item.knowledge_task ? taskTag(item.knowledge_task) : canAddToKnowledge(item) ? (
+                      <Button
+                        size="small"
+                        icon={<BookOutlined />}
+                        loading={item.id ? knowledgeSubmitting.has(item.id) : false}
+                        onClick={() => void addToKnowledge(item)}
+                      >
+                        加入知识库
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
                 {item.content ? <SourceCards sources={item.sources || []} /> : null}
               </div>
             </article>

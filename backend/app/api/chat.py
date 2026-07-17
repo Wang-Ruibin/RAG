@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
 from app.core.responses import success
-from app.models.orm import Conversation, Message
-from app.models.schemas import ChatRequest
+from app.models.orm import AnswerKnowledgeTask, Conversation, Message
+from app.models.schemas import AnswerKnowledgeTaskOut, ChatRequest
+from app.services.answer_knowledge import answer_knowledge_service
 from app.services.chat import chat_service
 
 from .dependencies import CurrentUser, Database
@@ -14,7 +15,21 @@ from .dependencies import CurrentUser, Database
 router = APIRouter(prefix="/api", tags=["问答"])
 
 
-def message_dict(message: Message) -> dict[str, object]:
+def task_dict(task: AnswerKnowledgeTask) -> dict[str, object]:
+    return AnswerKnowledgeTaskOut(
+        id=task.id,
+        assistant_message_id=task.assistant_message_id,
+        status=task.status,
+        document_id=task.document_id,
+        cleaned_title=task.cleaned_title,
+        error=task.error,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+        finished_at=task.finished_at,
+    ).model_dump(mode="json")
+
+
+def message_dict(message: Message, task: AnswerKnowledgeTask | None = None) -> dict[str, object]:
     return {
         "id": message.id,
         "role": message.role.value,
@@ -23,6 +38,8 @@ def message_dict(message: Message) -> dict[str, object]:
         "status": message.status.value,
         "model": message.model,
         "latency_ms": message.latency_ms,
+        "answer_origin": message.answer_origin.value if message.answer_origin else None,
+        "knowledge_task": task_dict(task) if task is not None else None,
         "created_at": message.created_at.isoformat(),
     }
 
@@ -57,6 +74,47 @@ def chat_stream(body: ChatRequest, db: Database, user: CurrentUser) -> Streaming
             "Connection": "keep-alive",
         },
     )
+
+
+@router.post(
+    "/messages/{message_id}/knowledge-task",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def create_answer_knowledge_task(
+    message_id: int,
+    db: Database,
+    user: CurrentUser,
+) -> dict[str, object]:
+    try:
+        task = answer_knowledge_service.create_task(db, user, message_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success(task_dict(task), "已加入知识库处理队列", 202)
+
+
+@router.get("/messages/{message_id}/knowledge-task")
+def get_answer_knowledge_task_for_message(
+    message_id: int,
+    db: Database,
+    user: CurrentUser,
+) -> dict[str, object]:
+    task = answer_knowledge_service.get_task_for_message(db, user, message_id)
+    return success(task_dict(task) if task is not None else None)
+
+
+@router.get("/knowledge-tasks/{task_id}")
+def get_answer_knowledge_task(
+    task_id: int,
+    db: Database,
+    user: CurrentUser,
+) -> dict[str, object]:
+    try:
+        task = answer_knowledge_service.get_task(db, user, task_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success(task_dict(task))
 
 
 @router.get("/conversations")
@@ -95,13 +153,23 @@ def get_conversation(conversation_id: int, db: Database, user: CurrentUser) -> d
     messages = db.scalars(
         select(Message).where(Message.conversation_id == conversation.id).order_by(Message.id)
     ).all()
+    task_by_message = {
+        task.assistant_message_id: task
+        for task in db.scalars(
+            select(AnswerKnowledgeTask).where(
+                AnswerKnowledgeTask.assistant_message_id.in_([message.id for message in messages])
+            )
+        ).all()
+    }
     return success(
         {
             "id": conversation.id,
             "title": conversation.title,
             "created_at": conversation.created_at.isoformat(),
             "updated_at": conversation.updated_at.isoformat(),
-            "messages": [message_dict(message) for message in messages],
+            "messages": [
+                message_dict(message, task_by_message.get(message.id)) for message in messages
+            ],
         }
     )
 

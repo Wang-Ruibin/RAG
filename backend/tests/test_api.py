@@ -9,7 +9,9 @@ from app.models.enums import MessageStatus, Role
 from app.models.orm import Message, User
 from app.rag.generation import generator
 from app.rag.retrieval import RetrievalResult
+from app.services.answer_knowledge import answer_knowledge_service
 from app.services.chat import chat_service
+from app.services.web_search import WebSearchResult
 from httpx import AsyncClient
 
 pytestmark = pytest.mark.anyio
@@ -95,6 +97,11 @@ async def test_grounded_chat_persists_citations_and_enforces_ownership(
     )
     monkeypatch.setattr(chat_service, "retrieve", lambda _question, _history: (_question, [result]))
     monkeypatch.setattr(
+        chat_service,
+        "search_web",
+        lambda _query: pytest.fail("web search should not be called for valid local context"),
+    )
+    monkeypatch.setattr(
         generator,
         "complete",
         lambda _question, _results: "请携带有效身份证件。[S1]",
@@ -109,6 +116,7 @@ async def test_grounded_chat_persists_citations_and_enforces_ownership(
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["answer"].endswith("[S1]")
+    assert data["answer_origin"] == "KNOWLEDGE_BASE"
     assert data["sources"][0]["source_url"] == "https://example.edu.cn/card"
 
     conversation = await client.get(
@@ -117,12 +125,40 @@ async def test_grounded_chat_persists_citations_and_enforces_ownership(
     assert conversation.status_code == 200
     assert len(conversation.json()["data"]["messages"]) == 2
 
+    monkeypatch.setattr(answer_knowledge_service, "submit", lambda _task_id: None)
+    knowledge_task = await client.post(
+        f"/api/messages/{data['message_id']}/knowledge-task",
+        headers=first_header,
+    )
+    assert knowledge_task.status_code == 202
+    task_data = knowledge_task.json()["data"]
+    assert task_data["assistant_message_id"] == data["message_id"]
+    assert task_data["status"] == "QUEUED"
+
+    duplicate_task = await client.post(
+        f"/api/messages/{data['message_id']}/knowledge-task",
+        headers=first_header,
+    )
+    assert duplicate_task.status_code == 202
+    assert duplicate_task.json()["data"]["id"] == task_data["id"]
+
+    conversation_with_task = await client.get(
+        f"/api/conversations/{data['conversation_id']}", headers=first_header
+    )
+    assistant_message = conversation_with_task.json()["data"]["messages"][1]
+    assert assistant_message["knowledge_task"]["id"] == task_data["id"]
+
     second = await register(client, "other@example.com")
     unauthorized = await client.get(
         f"/api/conversations/{data['conversation_id']}",
         headers=auth_header(str(second["access_token"])),
     )
     assert unauthorized.status_code == 404
+    forbidden_task = await client.post(
+        f"/api/messages/{data['message_id']}/knowledge-task",
+        headers=auth_header(str(second["access_token"])),
+    )
+    assert forbidden_task.status_code == 404
 
 
 async def test_stream_chat_emits_protocol_and_persists_complete_message(
@@ -183,6 +219,45 @@ async def test_stream_chat_emits_protocol_and_persists_complete_message(
         assert assistant.sources_json[0]["chunk_id"] == 21
 
 
+async def test_stream_chat_uses_mocked_baidu_web_search(client: AsyncClient, monkeypatch) -> None:
+    registered = await register(client, "stream-web@example.com")
+    header = auth_header(str(registered["access_token"]))
+    monkeypatch.setattr(chat_service, "retrieve", lambda question, _history: (question, []))
+    web_result = WebSearchResult(
+        title="河海大学通知",
+        url="https://www.hhu.edu.cn/news",
+        snippet="河海大学官网发布了通知。",
+        content="河海大学官网发布了通知。",
+        site_name="河海大学",
+        domain="www.hhu.edu.cn",
+        published_at=date(2026, 7, 2),
+        citation_index=1,
+    )
+    monkeypatch.setattr(chat_service, "search_web", lambda _query: [web_result])
+    monkeypatch.setattr(
+        generator,
+        "stream_web",
+        lambda _question, _results: iter(["官网通知", "。[W1]"]),
+    )
+
+    response = await client.post(
+        "/api/chat/stream",
+        headers=header,
+        json={"question": "河海大学最近有什么通知？"},
+    )
+
+    assert response.status_code == 200
+    assert response.text.count("event: status") == 3
+    assert '"answer_origin": "WEB_SEARCH"' in response.text
+    assert '"source_type": "WEB_SEARCH"' in response.text
+    assert "event: done" in response.text
+    with SessionLocal() as db:
+        assistant = db.query(Message).order_by(Message.id.desc()).first()
+        assert assistant is not None
+        assert assistant.answer_origin == "WEB_SEARCH"
+        assert assistant.sources_json[0]["url"] == "https://www.hhu.edu.cn/news"
+
+
 async def test_low_confidence_question_is_refused_without_calling_llm(
     client: AsyncClient, monkeypatch
 ) -> None:
@@ -199,7 +274,45 @@ async def test_low_confidence_question_is_refused_without_calling_llm(
     assert response.status_code == 200
     data = response.json()["data"]
     assert "暂未找到足够相关的信息" in data["answer"]
+    assert data["answer_origin"] == "NO_ANSWER"
     assert data["sources"] == []
+
+
+async def test_low_confidence_question_uses_mocked_baidu_web_search(
+    client: AsyncClient, monkeypatch
+) -> None:
+    registered = await register(client, "web@example.com")
+    header = auth_header(str(registered["access_token"]))
+    monkeypatch.setattr(chat_service, "retrieve", lambda question, _history: (question, []))
+    web_result = WebSearchResult(
+        title="河海大学校历",
+        url="https://www.hhu.edu.cn/calendar",
+        snippet="河海大学发布了新学期校历安排。",
+        content="河海大学发布了新学期校历安排。",
+        site_name="河海大学",
+        domain="www.hhu.edu.cn",
+        published_at=date(2026, 7, 1),
+        citation_index=1,
+    )
+    monkeypatch.setattr(chat_service, "search_web", lambda _query: [web_result])
+    monkeypatch.setattr(
+        generator,
+        "complete_web",
+        lambda _question, _results: "以官网校历为准。[W1]",
+    )
+
+    response = await client.post(
+        "/api/chat",
+        headers=header,
+        json={"question": "新学期校历什么时候发布？"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["answer_origin"] == "WEB_SEARCH"
+    assert data["answer"].endswith("[W1]")
+    assert data["sources"][0]["source_type"] == "WEB_SEARCH"
+    assert data["sources"][0]["site_name"] == "河海大学"
 
 
 async def test_stream_error_is_sanitized_and_persisted(client: AsyncClient, monkeypatch) -> None:

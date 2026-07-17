@@ -5,7 +5,14 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from .enums import DocumentStatus, MessageStatus, ProcessingStage, Role
+from .enums import (
+    AnswerKnowledgeStatus,
+    AnswerOrigin,
+    DocumentStatus,
+    MessageStatus,
+    ProcessingStage,
+    Role,
+)
 
 
 class RegisterRequest(BaseModel):
@@ -69,13 +76,19 @@ class DocumentUpdateRequest(BaseModel):
 
 
 class SourceRef(BaseModel):
-    chunk_id: int
-    document_id: int
+    source_type: str | None = None
+    chunk_id: int | None = None
+    document_id: int | None = None
     title: str
+    url: str | None = None
     source_url: str | None = None
     published_at: date | None = None
-    score: float
+    score: float | None = None
     snippet: str
+    content: str | None = None
+    site_name: str | None = None
+    domain: str | None = None
+    citation_index: int | None = None
 
 
 class ChatRequest(BaseModel):
@@ -88,8 +101,21 @@ class ChatResult(BaseModel):
     message_id: int
     answer: str
     sources: list[SourceRef]
+    answer_origin: AnswerOrigin
     model: str
     latency_ms: int
+
+
+class AnswerKnowledgeTaskOut(BaseModel):
+    id: int
+    assistant_message_id: int
+    status: AnswerKnowledgeStatus
+    document_id: int | None = None
+    cleaned_title: str | None = None
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    finished_at: datetime | None = None
 
 
 class MessageOut(BaseModel):
@@ -100,6 +126,8 @@ class MessageOut(BaseModel):
     status: MessageStatus
     model: str | None
     latency_ms: int | None
+    answer_origin: AnswerOrigin | None = None
+    knowledge_task: AnswerKnowledgeTaskOut | None = None
     created_at: datetime
 
 

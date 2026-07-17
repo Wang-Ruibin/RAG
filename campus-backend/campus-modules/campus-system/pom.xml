@@ -41,6 +41,10 @@
         </dependency>
         <dependency>
             <groupId>com.campus</groupId>
+            <artifactId>campus-common-excel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.campus</groupId>
             <artifactId>campus-common-redis</artifactId>
         </dependency>
         <dependency>

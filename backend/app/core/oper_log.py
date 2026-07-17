@@ -59,6 +59,16 @@ def _truncate(value: str, limit: int) -> str:
     return value if len(value) <= limit else f"{value[:limit]}..."
 
 
+def _normalize_ip(ip: str) -> str:
+    """IPv6 回环/IPv4 映射地址归一化，与 Java 侧 LogAspect 的记录格式对齐。"""
+    ip = ip.strip()
+    if ip in ("::1", "0:0:0:0:0:0:0:1"):
+        return "127.0.0.1"
+    if ip.startswith("::ffff:"):
+        return ip[7:]
+    return ip
+
+
 def _extract_error_msg(body_text: str) -> str | None:
     try:
         payload = json.loads(body_text)
@@ -156,7 +166,9 @@ class OperLogMiddleware:
 
             forwarded = headers.get("x-forwarded-for", "")
             client = scope.get("client")
-            oper_ip = forwarded.split(",")[0].strip() if forwarded else (client[0] if client else "")
+            oper_ip = _normalize_ip(
+                forwarded.split(",")[0] if forwarded else (client[0] if client else "")
+            )
 
             row = {
                 "title": title,

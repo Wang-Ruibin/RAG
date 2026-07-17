@@ -20,6 +20,7 @@
         <module>campus-common/campus-common-log</module>
         <module>campus-common/campus-common-redis</module>
         <module>campus-common/campus-common-swagger</module>
+        <module>campus-common/campus-common-excel</module>
         <!-- API 接口定义 -->
         <module>campus-api/campus-api-system</module>
         <!-- 网关 -->
@@ -120,6 +121,13 @@
                 <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
                 <version>${knife4j.version}</version>
             </dependency>
+            <!-- 统一 commons-io：EasyExcel 的 POI 5.x 需要 2.15+，
+                 openfeign 传递的 2.11 会导致 NoSuchMethodError -->
+            <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>2.16.1</version>
+            </dependency>
             <!-- FastJson2 -->
             <dependency>
                 <groupId>com.alibaba.fastjson2</groupId>
@@ -155,6 +163,11 @@
             <dependency>
                 <groupId>com.campus</groupId>
                 <artifactId>campus-common-swagger</artifactId>
+                <version>${campus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.campus</groupId>
+                <artifactId>campus-common-excel</artifactId>
                 <version>${campus.version}</version>
             </dependency>
             <dependency>

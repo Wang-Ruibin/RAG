@@ -3,6 +3,7 @@
     <div class="page-header">
       <h3>系统日志</h3>
       <div>
+        <el-button type="success" :icon="Download" :loading="exporting" @click="handleExport" v-if="userStore.hasPermission('system:log:export')">导出</el-button>
         <el-button type="danger" :icon="Delete" @click="handleClean" v-if="userStore.hasPermission('system:log:remove')">清空日志</el-button>
       </div>
     </div>
@@ -91,10 +92,10 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
-import { listLog, deleteLogs, cleanLog } from '@/api/log'
+import { listLog, deleteLogs, cleanLog, exportLog } from '@/api/log'
 import type { SysOperLog } from '@/types'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Search, Refresh, View } from '@element-plus/icons-vue'
+import { Delete, Search, Refresh, View, Download } from '@element-plus/icons-vue'
 
 const userStore = useUserStore()
 const logs = ref<SysOperLog[]>([])
@@ -102,6 +103,30 @@ const selectedIds = ref<number[]>([])
 const loading = ref(false)
 const search = reactive({ title: '', operName: '', status: null as number | null })
 const page = reactive({ pageNum: 1, pageSize: 10, total: 0 })
+
+// 导出（携带当前搜索条件）
+const exporting = ref(false)
+async function handleExport() {
+  exporting.value = true
+  try {
+    const res = await exportLog({
+      title: search.title || undefined,
+      operName: search.operName || undefined,
+      status: search.status ?? undefined,
+    })
+    const url = URL.createObjectURL(new Blob([res.data]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `系统日志_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
 
 const detailVisible = ref(false)
 const detail = reactive<any>({})

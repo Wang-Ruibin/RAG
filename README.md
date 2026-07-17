@@ -30,10 +30,12 @@
 - **低置信拒答**：知识库外的问题自动回复「未找到相关信息」，避免生成幻觉
 - **闲聊识别**：问候/寒暄自动跳过检索，直接返回引导信息
 - **会话持久化**：问答记录自动保存，切换页面不丢失，左侧栏可查看历史会话
+- **流式打字机**：SSE 逐字显示，发送中显示 loading，支持「停止生成」
+- **多轮对话**：自动携带最近 6 轮历史上下文，解决指代消解
 
 ### 知识库文档管理
 
-- 支持**上传 .txt 文档**，填写标题、分类、来源链接
+- 支持**上传 .txt/.pdf/.doc/.docx 文档**，填写标题、分类、来源链接
 - 文档列表支持分类筛选、关键词搜索
 - **重建索引按钮**：一键清空向量库 → 将列表中全部文档重新向量化 → 即时生效
 - 删除文档同步清理对应向量
@@ -42,7 +44,7 @@
 
 - 注册 / 登录（JWT + BCrypt）
 - **修改密码**：个人中心可直接修改密码
-- 管理员：用户管理（角色切换、启禁用）、缓存管理面板
+- 管理员：用户管理（角色切换、启禁用）、硬删除用户（彻底从 MySQL 移除）
 
 ### 缓存系统
 
@@ -152,7 +154,9 @@
 | | `POST /api/user/login` | 登录 |
 | | `GET/PUT /api/user/profile` | 个人信息 |
 | | `PUT /api/user/change-password` | 修改密码 |
-| | `GET /api/user/list` | 用户列表（管理员） |
+| | `GET /api/user/list` | 用户列表（管理员，默认仅活跃用户） |
+| | `DELETE /api/user/{id}` | 硬删除用户 |
+| | `PUT /api/user/{id}/status` | 启用/禁用用户 |
 | 文档 | `POST /api/document` | 创建文档（自动触发索引） |
 | | `GET /api/document/list` | 文档列表（分页+筛选） |
 | | `PUT /api/document/{id}` | 更新文档 |
@@ -164,6 +168,7 @@
 | | `GET /api/qa/hot` | 热门问题 |
 | | `POST /api/qa/feedback` | 提交反馈 |
 | AI | `POST /api/ai/query` | RAG 问答代理 |
+| | `GET /api/ai/query/stream` | SSE 流式问答（带 history 参数） |
 
 ---
 
@@ -221,3 +226,18 @@ python -m pytest tests/ --ignore=tests/test_reranker.py
 cd frontend
 npx vitest run
 ```
+
+---
+
+## PPT 课程对照
+
+| Day | 主题 | 要求 | 完成 |
+|-----|------|------|------|
+| Day1 | 前置与环境搭建 | GitHub、环境、数据库 | ✅ |
+| Day2 | 基础功能开发 | 注册登录 JWT、CRUD | ✅ |
+| Day3 | RAG 技术专题 | 切分、Embedding、FAISS | ✅ |
+| Day4 | 业务模块开发 | 文档上传、处理流转 | ✅ |
+| Day5 | AI 模块开发 | RAG 问答、SSE 流式、多轮 | ✅ |
+| Day6 | 测试与发布 | 测试、打包、文档 | ✅ |
+
+> 技术栈：PPT 要求 Java/Spring Boot，本项目使用 Python/FastAPI，功能完全等价。

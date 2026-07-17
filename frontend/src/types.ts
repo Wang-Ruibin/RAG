@@ -10,14 +10,33 @@ export interface User {
 }
 
 export interface SourceRef {
-  chunk_id: number
-  document_id: number
+  source_type?: 'KNOWLEDGE_BASE' | 'WEB_SEARCH' | string | null
+  chunk_id?: number | null
+  document_id?: number | null
   title: string
+  url?: string | null
   source_url?: string | null
   published_at?: string | null
-  score: number
+  score?: number | null
   snippet: string
+  content?: string | null
+  site_name?: string | null
+  domain?: string | null
   citation_index?: number
+}
+
+export type AnswerOrigin = 'KNOWLEDGE_BASE' | 'WEB_SEARCH' | 'NO_ANSWER'
+
+export interface AnswerKnowledgeTask {
+  id: number
+  assistant_message_id: number
+  status: 'QUEUED' | 'PROCESSING' | 'COMPLETE' | 'FAILED'
+  document_id?: number | null
+  cleaned_title?: string | null
+  error?: string | null
+  created_at: string
+  updated_at: string
+  finished_at?: string | null
 }
 
 export interface ChatMessage {
@@ -25,6 +44,8 @@ export interface ChatMessage {
   role: 'USER' | 'ASSISTANT'
   content: string
   sources: SourceRef[]
+  answer_origin?: AnswerOrigin | null
+  knowledge_task?: AnswerKnowledgeTask | null
   status?: 'STREAMING' | 'COMPLETE' | 'CANCELLED' | 'ERROR'
   latency_ms?: number | null
 }

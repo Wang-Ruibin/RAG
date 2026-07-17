@@ -34,3 +34,16 @@ class MessageStatus(StrEnum):
 class MessageRole(StrEnum):
     USER = "USER"
     ASSISTANT = "ASSISTANT"
+
+
+class AnswerOrigin(StrEnum):
+    KNOWLEDGE_BASE = "KNOWLEDGE_BASE"
+    WEB_SEARCH = "WEB_SEARCH"
+    NO_ANSWER = "NO_ANSWER"
+
+
+class AnswerKnowledgeStatus(StrEnum):
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    COMPLETE = "COMPLETE"
+    FAILED = "FAILED"

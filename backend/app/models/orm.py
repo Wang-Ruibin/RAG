@@ -20,7 +20,15 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
-from .enums import DocumentStatus, MessageRole, MessageStatus, ProcessingStage, Role
+from .enums import (
+    AnswerKnowledgeStatus,
+    AnswerOrigin,
+    DocumentStatus,
+    MessageRole,
+    MessageStatus,
+    ProcessingStage,
+    Role,
+)
 
 
 def utc_now() -> datetime:
@@ -139,9 +147,46 @@ class Message(Base):
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retrieval_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    answer_origin: Mapped[AnswerOrigin | None] = mapped_column(
+        Enum(AnswerOrigin), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class AnswerKnowledgeTask(Base):
+    __tablename__ = "answer_knowledge_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    assistant_message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    source_answer_origin: Mapped[AnswerOrigin | None] = mapped_column(
+        Enum(AnswerOrigin), nullable=True
+    )
+    original_question: Mapped[str] = mapped_column(Text)
+    original_answer: Mapped[str] = mapped_column(Text)
+    sources_snapshot: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    cleaned_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    cleaned_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status: Mapped[AnswerKnowledgeStatus] = mapped_column(
+        Enum(AnswerKnowledgeStatus), default=AnswerKnowledgeStatus.QUEUED, index=True
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

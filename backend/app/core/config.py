@@ -64,6 +64,26 @@ class Settings(BaseSettings):
     context_top_k: int = 5
     rrf_k: int = 60
 
+    web_search_enabled: bool = False
+    web_search_provider: Literal["baidu"] = "baidu"
+    web_search_snippet_max_chars: int = 360
+    web_search_content_max_chars: int = 1200
+    baidu_search_base_url: str = "https://qianfan.baidubce.com"
+    baidu_search_path: str = "/v2/ai_search/web_search"
+    baidu_search_api_key: SecretStr = SecretStr("")
+    baidu_search_auth_header: str = "X-Appbuilder-Authorization"
+    baidu_search_max_results: int = 5
+    baidu_search_timeout_connect_seconds: float = 5.0
+    baidu_search_timeout_read_seconds: float = 15.0
+    baidu_search_safe_search: Literal["strict", "none"] = "strict"
+    baidu_search_recency_filter: str | None = None
+    baidu_search_match_site: str | None = None
+    baidu_search_block_websites: str = ""
+
+    answer_knowledge_category: str = "问答沉淀"
+    answer_knowledge_max_answer_chars: int = 6000
+    answer_knowledge_max_source_chars: int = 6000
+
     chunk_size: int = 500
     chunk_overlap: int = 80
     max_upload_bytes: int = 50 * 1024 * 1024

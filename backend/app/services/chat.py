@@ -11,12 +11,16 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.models.enums import MessageRole, MessageStatus
+from app.models.enums import AnswerOrigin, MessageRole, MessageStatus
 from app.models.orm import Conversation, Message, User
 from app.rag.generation import generator, validate_citations
 from app.rag.retrieval import RetrievalResult, retrieval_service
+from app.services.web_search import WebSearchError, WebSearchResult, get_web_search_provider
 
-REFUSAL = "根据现有校园知识库，暂未找到足够相关的信息。建议补充问题细节或通过河海大学官网核实。"
+REFUSAL = (
+    "根据现有校园知识库和联网搜索结果，暂未找到足够相关的信息。"
+    "建议补充问题细节，或通过河海大学官网核实。"
+)
 logger = logging.getLogger("uvicorn.error")
 
 CONTEXT_REFERENCE_MARKERS = (
@@ -112,12 +116,17 @@ class ChatService:
         standalone = self._retrieval_query(question, history)
         return standalone, retrieval_service.search(standalone)
 
+    def search_web(self, query: str) -> list[WebSearchResult]:
+        if not settings.web_search_enabled:
+            return []
+        return get_web_search_provider().search(query)
+
     @staticmethod
     def _retrieval_query(question: str, history: list[dict[str, str]]) -> str:
         """Resolve only genuinely context-dependent follow-ups without an LLM call."""
         if not history:
             return question
-        normalized = question.strip().rstrip("？?。！!")
+        normalized = question.strip().rstrip("，。？！!")
         needs_context = any(marker in normalized for marker in CONTEXT_REFERENCE_MARKERS)
         needs_context = needs_context or normalized in SHORT_CONTEXT_QUESTIONS
         if not needs_context:
@@ -169,12 +178,17 @@ class ChatService:
         selected.extend(result for result in results[1:] if result.score >= cutoff)
         return selected[: settings.context_top_k]
 
+    def valid_local_context(self, results: list[RetrievalResult]) -> list[RetrievalResult]:
+        if self.is_low_confidence(results):
+            return []
+        return self.relevant_context(results)
+
     @staticmethod
     def grounded_answer(
         raw_answer: str, results: list[RetrievalResult]
     ) -> tuple[str, list[dict[str, object]], list[int]]:
         """Validate citations and expose only the strongly related context sources."""
-        answer, cited = validate_citations(raw_answer, len(results))
+        answer, cited = validate_citations(raw_answer, len(results), "S")
         if results and not cited:
             answer = f"{answer} [S1]".strip()
             cited = [1]
@@ -182,6 +196,19 @@ class ChatService:
             result.source_dict(citation_index=index)
             for index, result in enumerate(results, start=1)
         ]
+        for source in sources:
+            source["source_type"] = "KNOWLEDGE_BASE"
+        return answer, sources, cited
+
+    @staticmethod
+    def grounded_web_answer(
+        raw_answer: str, results: list[WebSearchResult]
+    ) -> tuple[str, list[dict[str, object]], list[int]]:
+        answer, cited = validate_citations(raw_answer, len(results), "W")
+        if results and not cited:
+            answer = f"{answer} [W1]".strip()
+            cited = [1]
+        sources = [result.source_dict() for result in results]
         return answer, sources, cited
 
     def complete(
@@ -194,28 +221,40 @@ class ChatService:
         started = time.perf_counter()
         conversation, assistant, history = self.prepare(db, user, question, conversation_id)
         try:
-            _standalone, retrieved = self.retrieve(question, history)
-            if self.is_low_confidence(retrieved):
-                answer = REFUSAL
-                sources: list[dict[str, object]] = []
-            else:
-                results = self.relevant_context(retrieved)
+            standalone, retrieved = self.retrieve(question, history)
+            results = self.valid_local_context(retrieved)
+            answer_origin = AnswerOrigin.NO_ANSWER
+            if results:
                 raw_answer = generator.complete(question, results)
                 if not raw_answer.strip():
                     raise RuntimeError("LLM returned an empty answer")
                 answer, sources, _cited = self.grounded_answer(raw_answer, results)
+                answer_origin = AnswerOrigin.KNOWLEDGE_BASE
+            else:
+                web_results = self._safe_web_search(standalone, assistant.id)
+                if web_results:
+                    raw_answer = generator.complete_web(question, web_results)
+                    if not raw_answer.strip():
+                        raise RuntimeError("LLM returned an empty web answer")
+                    answer, sources, _cited = self.grounded_web_answer(raw_answer, web_results)
+                    answer_origin = AnswerOrigin.WEB_SEARCH
+                else:
+                    answer = REFUSAL
+                    sources = []
             latency = int((time.perf_counter() - started) * 1000)
             assistant.content = answer
             assistant.sources_json = sources
             assistant.status = MessageStatus.COMPLETE
             assistant.latency_ms = latency
             assistant.retrieval_score = retrieved[0].score if retrieved else None
+            assistant.answer_origin = answer_origin
             db.commit()
             return {
                 "conversation_id": conversation.id,
                 "message_id": assistant.id,
                 "answer": answer,
                 "sources": sources,
+                "answer_origin": answer_origin.value,
                 "model": settings.llm_model,
                 "latency_ms": latency,
             }
@@ -234,35 +273,35 @@ class ChatService:
         started = time.perf_counter()
         yield sse("start", {"conversation_id": conversation_id, "message_id": assistant_id})
         full_answer = ""
-        results: list[RetrievalResult] = []
+        local_results: list[RetrievalResult] = []
+        web_results: list[WebSearchResult] = []
         sources: list[dict[str, object]] = []
+        answer_origin = AnswerOrigin.NO_ANSWER
+        retrieved: list[RetrievalResult] = []
         try:
-            yield sse("status", {"phase": "retrieval", "message": "正在检索校园知识库…"})
+            yield sse("status", {"phase": "retrieval", "message": "正在检索校园知识库..."})
             retrieval_started = time.perf_counter()
-            _standalone, retrieved = self.retrieve(question, history)
+            standalone, retrieved = self.retrieve(question, history)
             logger.info(
                 "Chat retrieval completed assistant_id=%s elapsed=%.2fs results=%d",
                 assistant_id,
                 time.perf_counter() - retrieval_started,
                 len(retrieved),
             )
-            if self.is_low_confidence(retrieved):
-                full_answer = REFUSAL
-                yield sse("delta", {"text": full_answer})
-            else:
-                results = self.relevant_context(retrieved)
+            local_results = self.valid_local_context(retrieved)
+            if local_results:
                 logger.info(
                     "Chat context filtered assistant_id=%s retrieved=%d selected=%d "
                     "cutoff_floor=%.2f",
                     assistant_id,
                     len(retrieved),
-                    len(results),
+                    len(local_results),
                     settings.retrieval_context_min_score,
                 )
-                yield sse("status", {"phase": "generation", "message": "正在组织有依据的回答…"})
+                yield sse("status", {"phase": "generation", "message": "正在组织有依据的回答..."})
                 generation_started = time.perf_counter()
                 first_delta_at: float | None = None
-                for delta in generator.stream(question, results):
+                for delta in generator.stream(question, local_results):
                     if first_delta_at is None:
                         first_delta_at = time.perf_counter()
                         logger.info(
@@ -272,23 +311,55 @@ class ChatService:
                         )
                     full_answer += delta
                     yield sse("delta", {"text": delta})
-                if not full_answer.strip():
-                    raise RuntimeError("LLM stream returned no answer content")
-                logger.info(
-                    "Chat LLM stream completed assistant_id=%s elapsed=%.2fs chars=%d",
-                    assistant_id,
-                    time.perf_counter() - generation_started,
-                    len(full_answer),
-                )
+                answer_origin = AnswerOrigin.KNOWLEDGE_BASE
+            else:
+                yield sse("status", {"phase": "web_search", "message": "正在联网搜索最新信息..."})
+                web_results = self._safe_web_search(standalone, assistant_id)
+                if web_results:
+                    yield sse(
+                        "status",
+                        {"phase": "generation", "message": "正在整理联网搜索结果..."},
+                    )
+                    generation_started = time.perf_counter()
+                    first_delta_at = None
+                    for delta in generator.stream_web(question, web_results):
+                        if first_delta_at is None:
+                            first_delta_at = time.perf_counter()
+                            logger.info(
+                                "Chat first web LLM token assistant_id=%s elapsed=%.2fs",
+                                assistant_id,
+                                first_delta_at - generation_started,
+                            )
+                        full_answer += delta
+                        yield sse("delta", {"text": delta})
+                    answer_origin = AnswerOrigin.WEB_SEARCH
+                else:
+                    full_answer = REFUSAL
+                    yield sse("delta", {"text": full_answer})
+
+            if not full_answer.strip():
+                raise RuntimeError("LLM stream returned no answer content")
+            logger.info(
+                "Chat LLM stream completed assistant_id=%s chars=%d origin=%s",
+                assistant_id,
+                len(full_answer),
+                answer_origin.value,
+            )
             original_answer = full_answer.strip()
-            cleaned, sources, _cited = self.grounded_answer(full_answer, results)
+            if answer_origin == AnswerOrigin.WEB_SEARCH:
+                cleaned, sources, _cited = self.grounded_web_answer(full_answer, web_results)
+            elif answer_origin == AnswerOrigin.KNOWLEDGE_BASE:
+                cleaned, sources, _cited = self.grounded_answer(full_answer, local_results)
+            else:
+                cleaned, sources = original_answer, []
             if cleaned.startswith(original_answer) and cleaned != original_answer:
                 yield sse("delta", {"text": cleaned[len(original_answer) :]})
             yield sse(
                 "sources",
                 {
                     "items": sources,
-                    "low_confidence": self.is_low_confidence(retrieved),
+                    "low_confidence": not local_results,
+                    "answer_origin": answer_origin.value,
                     "final": True,
                 },
             )
@@ -300,8 +371,16 @@ class ChatService:
                 status=MessageStatus.COMPLETE,
                 latency_ms=latency,
                 retrieval_score=retrieved[0].score if retrieved else None,
+                answer_origin=answer_origin,
             )
-            yield sse("done", {"latency_ms": latency, "model": settings.llm_model})
+            yield sse(
+                "done",
+                {
+                    "latency_ms": latency,
+                    "model": settings.llm_model,
+                    "answer_origin": answer_origin.value,
+                },
+            )
         except GeneratorExit:
             self._finalize(
                 assistant_id,
@@ -309,6 +388,7 @@ class ChatService:
                 sources=sources,
                 status=MessageStatus.CANCELLED,
                 latency_ms=int((time.perf_counter() - started) * 1000),
+                answer_origin=answer_origin,
             )
             raise
         except Exception:
@@ -319,11 +399,27 @@ class ChatService:
                 sources=sources,
                 status=MessageStatus.ERROR,
                 latency_ms=int((time.perf_counter() - started) * 1000),
+                answer_origin=answer_origin,
             )
             yield sse(
                 "error",
                 {"code": "CHAT_FAILED", "message": "回答生成失败，请稍后重试"},
             )
+
+    def _safe_web_search(self, query: str, assistant_id: int) -> list[WebSearchResult]:
+        try:
+            results = self.search_web(query)
+        except WebSearchError as exc:
+            logger.warning(
+                "Web search failed assistant_id=%s kind=%s detail=%s",
+                assistant_id,
+                exc.kind,
+                exc,
+            )
+            return []
+        if not results:
+            logger.info("Web search returned no results assistant_id=%s", assistant_id)
+        return results
 
     @staticmethod
     def _finalize(
@@ -334,6 +430,7 @@ class ChatService:
         status: MessageStatus,
         latency_ms: int,
         retrieval_score: float | None = None,
+        answer_origin: AnswerOrigin | None = None,
     ) -> None:
         with SessionLocal() as db:
             message = db.get(Message, assistant_id)
@@ -344,6 +441,7 @@ class ChatService:
             message.status = status
             message.latency_ms = latency_ms
             message.retrieval_score = retrieval_score
+            message.answer_origin = answer_origin
             conversation = db.get(Conversation, message.conversation_id)
             if conversation is not None:
                 conversation.updated_at = utc_now()

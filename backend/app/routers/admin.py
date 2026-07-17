@@ -9,6 +9,39 @@ from fastapi.responses import HTMLResponse
 from app.redis_client import redis_client
 from app.services.user_service import UserService
 
+# 用户名查询缓存（避免重复查库）
+_user_name_cache: dict[str, str] = {}
+
+
+def _decode_key(key: str) -> str:
+    """将原始缓存 key 转换为人类可读的描述。"""
+    if key.startswith("campus:qa:qa:"):
+        # 新格式: campus:qa:qa:{user_id}:{question_short}:{hash_short}
+        parts = key.split(":")
+        if len(parts) >= 6:
+            user_id = parts[3]
+            question = parts[4]
+            if user_id not in _user_name_cache:
+                try:
+                    from app.database import SessionLocal as _SessionLocal
+
+                    db = _SessionLocal()
+                    user = UserService.get_by_id(db, int(user_id))
+                    db.close()
+                    _user_name_cache[user_id] = (
+                        user.nickname or user.username if user else f"用户{user_id}"
+                    )
+                except Exception:
+                    _user_name_cache[user_id] = f"用户{user_id}"
+            return f"{_user_name_cache[user_id]} 问: {question}"
+    elif key.startswith("campus:qa:session:"):
+        sid = key.replace("campus:qa:session:", "")
+        return f"会话 {sid[-12:]}"
+    elif key.startswith("campus:qa:hot:"):
+        return "热门问题统计"
+    return key
+
+
 router = APIRouter(prefix="/api/admin", tags=["管理后台"])
 
 
@@ -143,7 +176,14 @@ def list_cache_keys(
         try:
             ktype = redis_client.type(key)
             ttl = redis_client.ttl(key)
-            result.append({"key": key, "type": ktype, "ttl": ttl})
+            result.append(
+                {
+                    "key": key,
+                    "type": ktype,
+                    "ttl": ttl,
+                    "label": _decode_key(key),
+                }
+            )
         except Exception:
             result.append({"key": key, "type": "unknown", "ttl": -1})
 

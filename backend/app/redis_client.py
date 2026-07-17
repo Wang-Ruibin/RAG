@@ -38,10 +38,10 @@ class _RedisClientProxy:
             except Exception:
                 pass
 
-        import fakeredis
+        from app.disk_cache import DiskCache
 
-        print("Redis: using fakeredis (in-memory)")
-        return fakeredis.FakeRedis(decode_responses=True)
+        print("Redis: using disk cache (SQLite, persistent)")
+        return DiskCache()
 
     def __getattr__(self, name):
         """透明代理：所有方法调用委托给底层客户端"""

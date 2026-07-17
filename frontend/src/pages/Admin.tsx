@@ -48,7 +48,12 @@ export default function Admin() {
       </div>
       <Table rowKey="key" dataSource={keys} size="small" pagination={false}
         columns={[
-          { title: 'Key', dataIndex: 'key', ellipsis: true },
+          { title: '缓存条目', dataIndex: 'key', ellipsis: true, render: (_: string, record: any) => (
+            <div>
+              <div className="text-sm font-medium">{record.label || record.key}</div>
+              <div className="text-xs text-gray-400 font-mono">{record.key}</div>
+            </div>
+          ) },
           { title: 'Type', dataIndex: 'type', width: 80, render: (t: string) => { const c: Record<string,string>={string:'green',zset:'purple',list:'blue',hash:'orange'}; return <Tag color={c[t]||'default'}>{t}</Tag> } },
           { title: 'TTL', dataIndex: 'ttl', width: 80, render: (t: number) => t >= 0 ? t : '-' },
         ]}

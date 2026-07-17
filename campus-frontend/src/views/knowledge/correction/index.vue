@@ -1,66 +1,65 @@
 <template>
-  <div>
-    <div class="page-header">
-      <h3>纠错审核</h3>
-    </div>
+  <div class="page-shell">
+    <PageHeader title="纠错审核" description="审核用户对 AI 回答提交的纠错，通过后生成知识文档并沉淀进问答库" />
+    <FilterCard>
+      <label class="filter-field"><span>状态</span>
+        <el-select v-model="filters.status" placeholder="全部状态" clearable style="width:170px" @change="applyFilters">
+          <el-option label="待审核" value="PENDING" />
+          <el-option label="处理中" value="PROCESSING" />
+          <el-option label="已采纳" value="APPROVED" />
+          <el-option label="已拒绝" value="REJECTED" />
+          <el-option label="失败" value="FAILED" />
+        </el-select>
+      </label>
+      <el-button type="primary" :icon="Search" @click="applyFilters">查询</el-button>
+      <el-button :icon="Refresh" @click="resetFilters">重置</el-button>
+    </FilterCard>
 
-    <div class="search-bar">
-      <el-select v-model="search.status" placeholder="状态" clearable @change="loadData" style="width:140px">
-        <el-option label="待审核" value="PENDING" />
-        <el-option label="处理中" value="PROCESSING" />
-        <el-option label="已采纳" value="APPROVED" />
-        <el-option label="已拒绝" value="REJECTED" />
-        <el-option label="失败" value="FAILED" />
-      </el-select>
-      <el-button type="primary" :icon="Search" @click="loadData">搜索</el-button>
-      <el-button :icon="Refresh" @click="resetSearch">重置</el-button>
-    </div>
-
-    <div class="campus-card">
-      <el-table :data="corrections" v-loading="loading" stripe>
-        <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="original_question" label="原问题" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.original_question || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="proposed_answer" label="用户建议答案" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="contributor_name" label="提交人" width="120">
-          <template #default="{ row }">{{ row.contributor_name || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="statusTagType(row.status)" effect="light">{{ statusText(row.status) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="提交时间" width="170">
-          <template #default="{ row }">{{ row.created_at?.replace('T', ' ').slice(0, 19) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
-          <template #default="{ row }">
-            <el-button v-if="row.status === 'PENDING'" type="primary" link size="small" :icon="View" @click="openReview(row)">审核</el-button>
-            <el-button v-else type="info" link size="small" :icon="View" @click="openReview(row)">详情</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div style="margin-top:16px;display:flex;justify-content:flex-end">
-        <el-pagination v-model:current-page="page.pageNum" v-model:page-size="page.pageSize"
-          :total="page.total" :page-sizes="[10,20,50]" layout="total,sizes,prev,pager,next"
-          @current-change="loadData" @size-change="loadData" />
+    <section class="content-card table-card">
+      <div class="table-card__body">
+        <el-table :data="corrections" v-loading="loading" row-key="id" style="width:100%">
+          <el-table-column label="原问题" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.original_question || '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="proposed_answer" label="用户建议答案" min-width="260" show-overflow-tooltip />
+          <el-table-column label="提交人" width="130">
+            <template #default="{ row }">{{ row.contributor_name || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }"><StatusTag :label="statusText(row.status)" :tone="statusTone(row.status)" /></template>
+          </el-table-column>
+          <el-table-column label="提交时间" width="170">
+            <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openReview(row)">{{ row.status === 'PENDING' ? '审核' : '查看' }}</el-button>
+            </template>
+          </el-table-column>
+          <template #empty><EmptyState title="暂无纠错" description="用户在问答页点踩并提交纠错后会出现在这里" /></template>
+        </el-table>
       </div>
-    </div>
+      <div class="table-footer">
+        <span class="table-footer__total">共 {{ page.total }} 条纠错</span>
+        <el-pagination v-model:current-page="page.pageNum" v-model:page-size="page.pageSize"
+          :total="page.total" :page-sizes="[10,20,50]" layout="sizes,prev,pager,next"
+          @current-change="loadData" @size-change="handleSizeChange" />
+      </div>
+    </section>
 
     <!-- 审核弹窗 -->
     <el-dialog v-model="dialogVisible" :title="current?.status === 'PENDING' ? '审核纠错' : '纠错详情'" width="680px" destroy-on-close>
       <template v-if="current">
         <el-descriptions :column="1" border size="small" class="review-info">
-          <el-descriptions-item label="原问题">{{ current.original_question || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="原问题">{{ current.original_question || '—' }}</el-descriptions-item>
           <el-descriptions-item label="AI 原回答">
-            <div class="pre-wrap">{{ current.original_answer || '-' }}</div>
+            <div class="pre-wrap">{{ current.original_answer || '—' }}</div>
           </el-descriptions-item>
           <el-descriptions-item label="用户建议答案">
             <div class="pre-wrap">{{ current.proposed_answer }}</div>
           </el-descriptions-item>
           <el-descriptions-item label="提交人">
-            {{ current.contributor_name || '-' }}<span v-if="current.contributor_email">（{{ current.contributor_email }}）</span>
+            {{ current.contributor_name || '—' }}<span v-if="current.contributor_email">（{{ current.contributor_email }}）</span>
           </el-descriptions-item>
           <el-descriptions-item v-if="current.review_note" label="审核备注">{{ current.review_note }}</el-descriptions-item>
           <el-descriptions-item v-if="current.error" label="错误信息">{{ current.error }}</el-descriptions-item>
@@ -87,13 +86,17 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, View } from '@element-plus/icons-vue'
+import { Search, Refresh } from '@element-plus/icons-vue'
 import { listCorrections, approveCorrection, rejectCorrection } from '@/api/qa'
 import type { AdminAnswerCorrection } from '@/types'
+import PageHeader from '@/components/PageHeader.vue'
+import FilterCard from '@/components/FilterCard.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import EmptyState from '@/components/EmptyState.vue'
 
 const loading = ref(false)
 const corrections = ref<AdminAnswerCorrection[]>([])
-const search = reactive({ status: '' })
+const filters = reactive({ status: '' })
 const page = reactive({ pageNum: 1, pageSize: 10, total: 0 })
 
 const dialogVisible = ref(false)
@@ -109,8 +112,11 @@ const canApprove = computed(() =>
 function statusText(status: string) {
   return { PENDING: '待审核', PROCESSING: '处理中', APPROVED: '已采纳', REJECTED: '已拒绝', FAILED: '失败' }[status as never] || status
 }
-function statusTagType(status: string) {
+function statusTone(status: string) {
   return ({ PENDING: 'info', PROCESSING: 'warning', APPROVED: 'success', REJECTED: 'danger', FAILED: 'danger' } as const)[status as never] || 'info'
+}
+function formatDate(value?: string) {
+  return value ? value.replace('T', ' ').slice(0, 19) : '—'
 }
 
 async function loadData() {
@@ -119,7 +125,7 @@ async function loadData() {
     const res = await listCorrections({
       page: page.pageNum,
       size: page.pageSize,
-      status_filter: search.status || undefined,
+      status_filter: filters.status || undefined,
     })
     corrections.value = res.data.items
     page.total = res.data.total
@@ -130,8 +136,18 @@ async function loadData() {
   }
 }
 
-function resetSearch() {
-  search.status = ''
+function applyFilters() {
+  page.pageNum = 1
+  loadData()
+}
+
+function resetFilters() {
+  filters.status = ''
+  page.pageNum = 1
+  loadData()
+}
+
+function handleSizeChange() {
   page.pageNum = 1
   loadData()
 }
@@ -188,19 +204,8 @@ async function handleReject() {
 onMounted(loadData)
 </script>
 
-<style scoped lang="scss">
-.review-info {
-  margin-bottom: 16px;
-}
-.pre-wrap {
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 200px;
-  overflow-y: auto;
-}
-.review-form {
-  :deep(.el-form-item__label) {
-    font-weight: 600;
-  }
-}
+<style scoped>
+.review-info { margin-bottom: 16px; }
+.pre-wrap { white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+.review-form :deep(.el-form-item__label) { font-weight: 600; }
 </style>

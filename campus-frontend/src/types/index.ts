@@ -91,12 +91,16 @@ export interface Conversation {
 // 聊天消息
 export interface ChatMessage {
   id?: number
+  client_id?: string
+  request_id?: string
   role: 'USER' | 'ASSISTANT'
   content: string
   sources: SourceRef[]
   status?: 'STREAMING' | 'COMPLETE' | 'CANCELLED' | 'ERROR'
   latency_ms?: number | null
   answer_origin?: 'KNOWLEDGE_BASE' | 'WEB_SEARCH' | 'HYBRID' | 'NO_ANSWER' | null
+  created_at?: string
+  model?: string | null
   knowledge_task?: AnswerKnowledgeTask | null
   correction?: AnswerCorrection | null
 }
@@ -144,15 +148,19 @@ export interface AdminAnswerCorrection extends AnswerCorrection {
 
 // 引用来源
 export interface SourceRef {
-  chunk_id: number
-  document_id: number
-  title: string
-  source_url?: string | null
-  published_at?: string | null
-  score: number
-  snippet: string
+  chunk_id?: number | string
+  document_id?: number | string
+  title?: string
+  score?: number
+  snippet?: string
+  content?: string
+  source_type?: string
   citation_index?: number
-  source_type?: 'KNOWLEDGE_BASE' | 'WEB_SEARCH' | string
+  url?: string
+  source_url?: string
+  site_name?: string
+  domain?: string
+  published_at?: string
 }
 
 // 知识库文档（Python 模型）
@@ -182,15 +190,28 @@ export interface Envelope<T> {
   timestamp?: string
 }
 
+export interface ActiveChatStream {
+  requestId: string
+  requestedConversationId: number | string | null
+  serverConversationId: number | string | null
+  controller: AbortController
+  assistantMessageId: string
+}
+
 // 系统日志
 export interface SysOperLog {
   operId: number
   title: string
   businessType: number
   operName: string
+  method?: string
+  requestMethod?: string
   operUrl: string
   operIp: string
+  operParam?: string
+  jsonResult?: string
   status: number
+  errorMsg?: string
   operTime: string
   costTime: number
 }

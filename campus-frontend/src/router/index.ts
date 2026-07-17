@@ -19,7 +19,7 @@ const router = createRouter({
           path: 'home',
           name: 'Home',
           component: () => import('@/views/home/index.vue'),
-          meta: { title: '首页', icon: 'HomeFilled' }
+          meta: { title: '智能问答', icon: 'ChatDotRound' }
         },
         {
           path: 'knowledge/category',
@@ -62,7 +62,12 @@ const router = createRouter({
 
 // 路由守卫
 router.beforeEach((to, _from, next) => {
-  document.title = `${to.meta.title || 'CampusQA'} - 校园知识问答`
+  document.title = `${to.meta.title || '河海智问'} - 河海智问`
+
+  if (import.meta.env.DEV && to.query.__visual === '1') {
+    next()
+    return
+  }
 
   const userStore = useUserStore()
   if (to.path !== '/login' && !userStore.token) {

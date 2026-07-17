@@ -22,15 +22,12 @@
         <module>campus-common/campus-common-swagger</module>
         <!-- API 接口定义 -->
         <module>campus-api/campus-api-system</module>
-        <module>campus-api/campus-api-knowledge</module>
         <!-- 网关 -->
         <module>campus-gateway</module>
         <!-- 认证 -->
         <module>campus-auth</module>
-        <!-- 业务模块 -->
+        <!-- 业务模块（campus-knowledge / campus-qa 已退役，功能迁移至 Python RAG 后端） -->
         <module>campus-modules/campus-system</module>
-        <module>campus-modules/campus-knowledge</module>
-        <module>campus-modules/campus-qa</module>
     </modules>
 
     <properties>

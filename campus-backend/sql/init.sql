@@ -128,52 +128,9 @@ CREATE TABLE sys_login_info (
     KEY idx_login_time (login_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='登录日志表';
 
--- ==================== 知识库管理表 ====================
-
--- 知识分类表
-DROP TABLE IF EXISTS campus_knowledge_category;
-CREATE TABLE campus_knowledge_category (
-    category_id     BIGINT          NOT NULL AUTO_INCREMENT  COMMENT '分类ID',
-    parent_id       BIGINT          DEFAULT 0               COMMENT '父分类ID',
-    category_name   VARCHAR(128)    NOT NULL                COMMENT '分类名称',
-    category_key    VARCHAR(64)     NOT NULL                COMMENT '分类标识(如academic/news)',
-    sort_order      INT             DEFAULT 0               COMMENT '排序',
-    icon            VARCHAR(128)    DEFAULT NULL            COMMENT '图标',
-    status          CHAR(1)         DEFAULT '1'             COMMENT '状态(0停用 1正常)',
-    create_by       VARCHAR(64)     DEFAULT NULL            COMMENT '创建者',
-    create_time     DATETIME        DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_by       VARCHAR(64)     DEFAULT NULL            COMMENT '更新者',
-    update_time     DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    del_flag        CHAR(1)         DEFAULT '0'             COMMENT '删除标志',
-    remark          VARCHAR(500)    DEFAULT NULL            COMMENT '备注',
-    PRIMARY KEY (category_id),
-    UNIQUE KEY uk_category_key (category_key)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识分类表';
-
--- 知识文档表
-DROP TABLE IF EXISTS campus_knowledge_document;
-CREATE TABLE campus_knowledge_document (
-    doc_id          BIGINT          NOT NULL AUTO_INCREMENT  COMMENT '文档ID',
-    title           VARCHAR(255)    NOT NULL                COMMENT '文档标题',
-    category_id     BIGINT          NOT NULL                COMMENT '分类ID',
-    content         LONGTEXT        DEFAULT NULL            COMMENT '文档内容(Markdown)',
-    source_url      VARCHAR(500)    DEFAULT NULL            COMMENT '来源URL',
-    keywords        VARCHAR(500)    DEFAULT NULL            COMMENT '关键词',
-    status          CHAR(1)         DEFAULT '1'             COMMENT '状态(0草稿 1已发布)',
-    view_count      INT             DEFAULT 0               COMMENT '浏览次数',
-    create_by       VARCHAR(64)     DEFAULT NULL            COMMENT '创建者',
-    create_time     DATETIME        DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    update_by       VARCHAR(64)     DEFAULT NULL            COMMENT '更新者',
-    update_time     DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    del_flag        CHAR(1)         DEFAULT '0'             COMMENT '删除标志',
-    remark          VARCHAR(500)    DEFAULT NULL            COMMENT '备注',
-    PRIMARY KEY (doc_id),
-    KEY idx_category (category_id),
-    KEY idx_title (title),
-    KEY idx_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识文档表';
-
 -- ==================== 初始数据 ====================
+-- 注：知识库文档管理已迁移至 Python RAG 后端（documents 等表由 alembic 管理），
+--     原 campus_knowledge_category / campus_knowledge_document 表已退役删除。
 
 -- 管理员账号 admin / admin123
 INSERT INTO sys_user (user_id, user_name, nick_name, password, status, remark) VALUES
@@ -194,25 +151,17 @@ INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component,
 (2,  '知识库管理', 0, 2, '/knowledge',   NULL,              'M', NULL,           'document',   '1', '1'),
 (3,  '系统管理',   0, 3, '/system',      NULL,              'M', NULL,           'setting',    '1', '1'),
 -- 知识库子菜单
-(20, '分类管理',   2, 1, 'category',     'knowledge/category/index', 'C', 'knowledge:category:list',   'files',   '1', '1'),
-(21, '文档管理',   2, 2, 'document',     'knowledge/document/index', 'C', 'knowledge:document:list',   'document','1', '1'),
+(21, '文档管理',   2, 2, '/knowledge/document', 'knowledge/document/index', 'C', 'knowledge:document:list',   'document','1', '1'),
 -- 系统管理子菜单
 (30, '用户管理',   3, 1, '/system/user', 'system/user/index',       'C', 'system:user:list',   'user',    '1', '1'),
 (31, '角色管理',   3, 2, '/system/role', 'system/role/index',       'C', 'system:role:list',   'Avatar',  '1', '1'),
 (32, '系统日志',   3, 3, '/system/log',  'system/log/index',        'C', 'system:log:list',    'Tickets', '1', '1'),
--- 知识库按钮权限
-(2001, '分类新增',  20, 1, NULL, NULL, 'F', 'knowledge:category:add',    NULL, '1', '1'),
-(2002, '分类编辑',  20, 2, NULL, NULL, 'F', 'knowledge:category:edit',   NULL, '1', '1'),
-(2003, '分类删除',  20, 3, NULL, NULL, 'F', 'knowledge:category:remove', NULL, '1', '1'),
-(2004, '分类查询',  20, 4, NULL, NULL, 'F', 'knowledge:category:query',  NULL, '1', '1'),
-(2005, '分类导出',  20, 5, NULL, NULL, 'F', 'knowledge:category:export', NULL, '1', '1'),
-(2101, '文档新增',  21, 1, NULL, NULL, 'F', 'knowledge:document:add',    NULL, '1', '1'),
-(2102, '文档编辑',  21, 2, NULL, NULL, 'F', 'knowledge:document:edit',   NULL, '1', '1'),
-(2103, '文档删除',  21, 3, NULL, NULL, 'F', 'knowledge:document:remove', NULL, '1', '1'),
-(2104, '文档导出',  21, 4, NULL, NULL, 'F', 'knowledge:document:export', NULL, '1', '1'),
-(2105, '文档导入',  21, 5, NULL, NULL, 'F', 'knowledge:document:import', NULL, '1', '1'),
-(2106, '文档查询',  21, 6, NULL, NULL, 'F', 'knowledge:document:query',  NULL, '1', '1'),
-(2107, '文档检索',  21, 7, NULL, NULL, 'F', 'knowledge:document:search', NULL, '1', '1'),
+-- 知识库按钮权限（文档管理走 Python RAG 后端，无导出/导入/检索）
+(2101, '文档上传',  21, 1, NULL, NULL, 'F', 'knowledge:document:upload',  NULL, '1', '1'),
+(2102, '文档编辑',  21, 2, NULL, NULL, 'F', 'knowledge:document:edit',    NULL, '1', '1'),
+(2103, '文档删除',  21, 3, NULL, NULL, 'F', 'knowledge:document:remove',  NULL, '1', '1'),
+(2106, '文档查询',  21, 6, NULL, NULL, 'F', 'knowledge:document:query',   NULL, '1', '1'),
+(2108, '文档索引',  21, 8, NULL, NULL, 'F', 'knowledge:document:reindex', NULL, '1', '1'),
 -- 系统管理按钮权限
 (3001, '用户新增',  30, 1, NULL, NULL, 'F', 'system:user:add',    NULL, '1', '1'),
 (3002, '用户编辑',  30, 2, NULL, NULL, 'F', 'system:user:edit',   NULL, '1', '1'),
@@ -236,23 +185,9 @@ INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component,
 INSERT INTO sys_role_menu (role_id, menu_id)
 SELECT 1, menu_id FROM sys_menu;
 
--- 普通用户赋权（首页+知识库查看）
+-- 普通用户赋权（首页；文档管理为管理员专属，走 Python 侧 ADMIN 校验）
 INSERT INTO sys_role_menu (role_id, menu_id) VALUES
-(2, 1), (2, 2), (2, 20), (2, 21),
-(2, 2004), (2, 2106);
-
--- 知识分类初始数据（与现有 knowledge_docs 目录对应）
-INSERT INTO campus_knowledge_category (category_id, parent_id, category_name, category_key, sort_order) VALUES
-(1,  0, '学术教务',    'academic',         1),
-(2,  0, '学校新闻',    'news',             2),
-(3,  0, '学校概况',    'university_info',  3),
-(4,  0, '院系设置',    'departments',      4),
-(5,  0, '职能部门',    'admin',            5),
-(6,  0, '科研平台',    'research',         6),
-(7,  0, '校友基金会',  'alumni',           7),
-(8,  0, '校园生活',    'campus_life',      8),
-(9,  0, '学术文件',    'academic_files',   9),
-(10, 0, '第三方来源',  'third_party',      10);
+(2, 1);
 
 -- Nacos 配置库（Nacos自身使用）
 CREATE DATABASE IF NOT EXISTS nacos_config DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

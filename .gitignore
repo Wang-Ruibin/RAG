@@ -77,3 +77,6 @@ huggingface/
 *~
 .DS_Store
 Thumbs.db
+
+# Maven build output
+**/target/

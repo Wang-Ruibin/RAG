@@ -360,7 +360,12 @@ async def test_low_confidence_question_uses_mocked_web_search(
         published_at=date(2026, 7, 1),
         citation_index=1,
     )
-    monkeypatch.setattr(chat_service, "search_web", lambda _query: [web_result])
+    search_queries: list[str] = []
+    monkeypatch.setattr(
+        chat_service,
+        "search_web",
+        lambda query: search_queries.append(query) or [web_result],
+    )
     monkeypatch.setattr(
         generator,
         "complete_web",
@@ -379,6 +384,7 @@ async def test_low_confidence_question_uses_mocked_web_search(
     assert data["answer"].endswith("[W1]")
     assert data["sources"][0]["source_type"] == "WEB_SEARCH"
     assert data["sources"][0]["site_name"] == "河海大学"
+    assert search_queries == ["河海大学新学期校历什么时候发布？"]
 
 
 async def test_high_score_but_insufficient_evidence_uses_web(

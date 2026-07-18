@@ -17,6 +17,7 @@ from app.rag import embedding
 from app.rag.index import KnowledgeChunk, index_manager
 from app.rag.qa_index import QaMatch, qa_index_manager
 from app.rag.retrieval import RetrievalResult
+from app.services.chat_scope import scope_hohai_query
 
 TIME_SENSITIVE_MARKERS = (
     "最新",
@@ -31,22 +32,6 @@ TIME_SENSITIVE_MARKERS = (
     "校历",
 )
 QUESTION_TRAILING_MARKS = re.compile(r"[\s?？!！。；;，,]+$")
-CAMPUS_SCOPE_MARKERS = (
-    "学院",
-    "院系",
-    "学校",
-    "校区",
-    "校训",
-    "建校",
-    "招生",
-    "专业",
-    "宿舍",
-    "食堂",
-    "图书馆",
-    "教务",
-    "课程",
-    "毕业",
-)
 SEMANTIC_REWRITES = (
     ("几个", "多少个"),
     ("多少个", "几个"),
@@ -70,8 +55,7 @@ def rewrite_qa_queries(value: str) -> tuple[str, ...]:
     """Create a small deterministic query set without an extra LLM call."""
     query = unicodedata.normalize("NFKC", value).strip()
     query = QUESTION_TRAILING_MARKS.sub("", query)
-    if "河海大学" not in query and any(marker in query for marker in CAMPUS_SCOPE_MARKERS):
-        query = f"河海大学{query}"
+    query = scope_hohai_query(query)
 
     variants = [query]
     for source, target in SEMANTIC_REWRITES:

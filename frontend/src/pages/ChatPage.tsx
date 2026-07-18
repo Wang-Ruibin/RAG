@@ -122,8 +122,10 @@ export function ChatPage() {
     } else if (event.event === 'sources') {
       const sources = (event.data.items || []) as SourceRef[]
       const answer_origin = event.data.answer_origin as ChatMessage['answer_origin']
+      const finalAnswer = typeof event.data.answer === 'string' ? event.data.answer : undefined
       setMessages((current) => updateLastMessage(current, (item) => ({
         ...item,
+        content: finalAnswer ?? item.content,
         sources,
         answer_origin: answer_origin ?? item.answer_origin,
       })))

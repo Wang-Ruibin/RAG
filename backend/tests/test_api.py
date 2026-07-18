@@ -604,6 +604,161 @@ async def test_stream_strong_qa_hit_regenerates_from_archived_sources(
     assert f'"model": "{settings.llm_model}"' in response.text
 
 
+async def test_insufficient_qa_sources_fall_back_to_full_rag_then_web(
+    client: AsyncClient, monkeypatch
+) -> None:
+    registered = await register(client, "qa-full-rag-fallback@example.com")
+    header = auth_header(str(registered["access_token"]))
+    archived = RetrievalResult(
+        chunk_id=61,
+        document_id=21,
+        title="河海大学2025录取分数线",
+        content="河海大学2025录取分数线查询页面。",
+        source_url="https://example.com/score",
+        published_at=None,
+        score=1.0,
+    )
+    full_rag = RetrievalResult(
+        chunk_id=62,
+        document_id=22,
+        title="河海大学招生信息网历年分数",
+        content="历年分数查询入口。",
+        source_url="https://zsw.hhu.edu.cn/lishifenshu.html",
+        published_at=None,
+        score=0.95,
+    )
+    lookup = QaLookup(
+        query_vector=None,
+        mode="direct",
+        match=QaMatch(
+            entry_id=3,
+            title="隐藏的分数线QA",
+            question="河海大学2025年分数线",
+            answer="江苏历史类603分，物理类594分。[W1]",
+            score=0.99,
+        ),
+        sources=(QaResolvedSource("S", 1, "WEB_ARCHIVE", archived),),
+    )
+    web = WebSearchResult(
+        title="河海大学2025年各省录取分数",
+        url="https://example.com/2025-score",
+        snippet="江苏历史类最低603分，物理类最低594分。",
+        content="江苏历史类最低603分，物理类最低594分。",
+        site_name="招生资料",
+        domain="example.com",
+        published_at=None,
+        citation_index=1,
+    )
+    checked_titles: list[list[str]] = []
+
+    def evidence(_question, results):  # type: ignore[no-untyped-def]
+        checked_titles.append([result.title for result in results])
+        return False
+
+    monkeypatch.setattr(settings, "evidence_sufficiency_check_enabled", True)
+    monkeypatch.setattr(qa_knowledge_service, "lookup", lambda _query: lookup)
+    monkeypatch.setattr(generator, "evidence_is_sufficient", evidence)
+    monkeypatch.setattr(chat_service, "retrieve", lambda question, _history: (question, [full_rag]))
+    monkeypatch.setattr(chat_service, "search_web", lambda _query: [web])
+    monkeypatch.setattr(
+        generator,
+        "complete_mixed",
+        lambda _question, _local, _web: "江苏历史类最低603分，物理类最低594分。[W1]",
+    )
+    monkeypatch.setattr(
+        generator,
+        "complete_qa",
+        lambda *_args: pytest.fail("insufficient QA evidence must not generate an answer"),
+    )
+
+    response = await client.post(
+        "/api/chat", headers=header, json={"question": "河海大学2025年分数线"}
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert "603分" in data["answer"]
+    assert data["answer_origin"] == "WEB_SEARCH"
+    assert [source["title"] for source in data["sources"]] == ["河海大学2025年各省录取分数"]
+    assert checked_titles == [
+        ["河海大学2025录取分数线"],
+        ["河海大学招生信息网历年分数"],
+    ]
+
+
+async def test_stream_insufficient_qa_sources_runs_full_rag_before_web(
+    client: AsyncClient, monkeypatch
+) -> None:
+    registered = await register(client, "qa-stream-fallback@example.com")
+    header = auth_header(str(registered["access_token"]))
+    archived = RetrievalResult(
+        71,
+        31,
+        "归档分数线页面",
+        "页面标题，没有具体分数。",
+        "https://example.com/archive",
+        None,
+        1.0,
+    )
+    full_rag = RetrievalResult(
+        72,
+        32,
+        "招生网查询入口",
+        "历年分数查询入口。",
+        "https://zsw.hhu.edu.cn/lishifenshu.html",
+        None,
+        0.95,
+    )
+    lookup = QaLookup(
+        query_vector=None,
+        mode="direct",
+        match=QaMatch(4, "隐藏QA", "河海大学2025年分数线", "历史回答。[W1]", 0.99),
+        sources=(QaResolvedSource("S", 1, "WEB_ARCHIVE", archived),),
+    )
+    web = WebSearchResult(
+        title="2025年录取分数",
+        url="https://example.com/current",
+        snippet="江苏历史类最低603分。",
+        content="江苏历史类最低603分。",
+        site_name="招生资料",
+        domain="example.com",
+        published_at=None,
+        citation_index=1,
+    )
+    retrieval_calls: list[str] = []
+
+    monkeypatch.setattr(settings, "evidence_sufficiency_check_enabled", True)
+    monkeypatch.setattr(qa_knowledge_service, "lookup", lambda _query: lookup)
+    monkeypatch.setattr(generator, "evidence_is_sufficient", lambda _question, _results: False)
+
+    def retrieve(question, _history):  # type: ignore[no-untyped-def]
+        retrieval_calls.append(question)
+        return question, [full_rag]
+
+    monkeypatch.setattr(chat_service, "retrieve", retrieve)
+    monkeypatch.setattr(chat_service, "search_web", lambda _query: [web])
+    monkeypatch.setattr(
+        generator,
+        "stream_mixed",
+        lambda _question, _local, _web: iter(["江苏历史类最低603分。[W1]"]),
+    )
+    monkeypatch.setattr(
+        generator,
+        "stream_qa",
+        lambda *_args: pytest.fail("insufficient QA evidence must not stream an answer"),
+    )
+
+    response = await client.post(
+        "/api/chat/stream", headers=header, json={"question": "河海大学2025年分数线"}
+    )
+
+    assert response.status_code == 200
+    assert retrieval_calls == ["河海大学2025年分数线"]
+    assert "相似问答的关联资料不足，正在检索完整知识库" in response.text
+    assert '"answer": "江苏历史类最低603分。[W1]"' in response.text
+    assert '"answer_origin": "WEB_SEARCH"' in response.text
+
+
 async def test_stream_error_is_sanitized_and_persisted(client: AsyncClient, monkeypatch) -> None:
     registered = await register(client, "stream-error@example.com")
     header = auth_header(str(registered["access_token"]))

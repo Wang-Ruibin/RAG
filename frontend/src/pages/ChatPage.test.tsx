@@ -4,9 +4,11 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../lib/api'
+import { streamChat } from '../lib/sse'
 import { ChatPage } from './ChatPage'
 
 vi.mock('../lib/api', () => ({ api: vi.fn() }))
+vi.mock('../lib/sse', () => ({ streamChat: vi.fn() }))
 
 beforeAll(() => {
   Object.defineProperty(globalThis, 'ResizeObserver', {
@@ -38,6 +40,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.mocked(api).mockReset()
+  vi.mocked(streamChat).mockReset()
 })
 
 afterEach(() => cleanup())
@@ -87,6 +90,37 @@ describe('ChatPage', () => {
 
     expect(await screen.findByText('联网搜索回答')).toBeInTheDocument()
     expect(screen.getByText(/请以官网校历为准/)).toBeInTheDocument()
+  })
+
+  it('replaces streamed text with the final compacted citation answer', async () => {
+    vi.mocked(api).mockResolvedValue([])
+    vi.mocked(streamChat).mockImplementation(async (_question, _conversationId, _signal, onEvent) => {
+      onEvent({ event: 'start', data: { conversation_id: 4, message_id: 40 } })
+      onEvent({ event: 'delta', data: { text: '分数信息见 [W1][W2][W5]。' } })
+      onEvent({
+        event: 'sources',
+        data: {
+          answer: '分数信息见 [W1][W2][W3]。',
+          answer_origin: 'WEB_SEARCH',
+          items: [
+            { citation_index: 1, title: '来源1', snippet: '', source_type: 'WEB_SEARCH' },
+            { citation_index: 2, title: '来源2', snippet: '', source_type: 'WEB_SEARCH' },
+            { citation_index: 3, title: '来源3', snippet: '', source_type: 'WEB_SEARCH' },
+          ],
+        },
+      })
+      onEvent({ event: 'done', data: { answer_origin: 'WEB_SEARCH' } })
+    })
+
+    render(<ChatPage />)
+    fireEvent.change(screen.getByPlaceholderText('输入校园相关问题，Enter 发送，Shift+Enter 换行'), {
+      target: { value: '河海大学2025年分数线' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /发送/ }))
+
+    expect(await screen.findByText(/分数信息见/)).toHaveTextContent('分数信息见 [W1][W2][W3]。')
+    expect(screen.queryByText(/W5/)).not.toBeInTheDocument()
+    expect(screen.getByText('引用来源（3）')).toBeInTheDocument()
   })
 
   it('copies an answer and submits mutually exclusive positive feedback', async () => {

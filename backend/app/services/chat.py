@@ -220,6 +220,36 @@ class ChatService:
             return False
 
     @staticmethod
+    def _compact_citations(
+        answer: str, cited: list[int], marker: str
+    ) -> tuple[str, dict[int, int]]:
+        """Renumber the sources that survived citation filtering without gaps."""
+        mapping = {old_index: new_index for new_index, old_index in enumerate(cited, start=1)}
+        if not mapping:
+            return answer, mapping
+
+        def replace(match: re.Match[str]) -> str:
+            old_index = int(match.group(1))
+            new_index = mapping.get(old_index)
+            return f"[{marker}{new_index}]" if new_index is not None else ""
+
+        return re.sub(rf"\[{marker}(\d+)\]", replace, answer), mapping
+
+    @staticmethod
+    def _answer_origin_for_sources(
+        sources: list[dict[str, object]],
+    ) -> AnswerOrigin:
+        has_web = any(source.get("source_type") == "WEB_SEARCH" for source in sources)
+        has_local = any(source.get("source_type") != "WEB_SEARCH" for source in sources)
+        if has_local and has_web:
+            return AnswerOrigin.HYBRID
+        if has_web:
+            return AnswerOrigin.WEB_SEARCH
+        if has_local:
+            return AnswerOrigin.KNOWLEDGE_BASE
+        return AnswerOrigin.NO_ANSWER
+
+    @staticmethod
     def grounded_answer(
         raw_answer: str, results: list[RetrievalResult]
     ) -> tuple[str, list[dict[str, object]], list[int]]:
@@ -228,10 +258,14 @@ class ChatService:
         if results and not cited:
             answer = f"{answer} [S1]".strip()
             cited = [1]
-        sources = [results[index - 1].source_dict(citation_index=index) for index in cited]
+        answer, citation_mapping = ChatService._compact_citations(answer, cited, "S")
+        sources = [
+            results[index - 1].source_dict(citation_index=citation_mapping[index])
+            for index in cited
+        ]
         for source, result in zip(sources, (results[index - 1] for index in cited), strict=False):
             source["source_type"] = result.document_kind
-        return answer, sources, cited
+        return answer, sources, list(range(1, len(cited) + 1))
 
     @staticmethod
     def grounded_web_answer(
@@ -241,8 +275,13 @@ class ChatService:
         if results and not cited:
             answer = f"{answer} [W1]".strip()
             cited = [1]
-        sources = [results[index - 1].source_dict() for index in cited]
-        return answer, sources, cited
+        answer, citation_mapping = ChatService._compact_citations(answer, cited, "W")
+        sources = []
+        for index in cited:
+            source = results[index - 1].source_dict()
+            source["citation_index"] = citation_mapping[index]
+            sources.append(source)
+        return answer, sources, list(range(1, len(cited) + 1))
 
     @staticmethod
     def grounded_mixed_answer(
@@ -259,13 +298,18 @@ class ChatService:
             elif local_results:
                 answer = f"{answer} [S1]".strip()
                 cited_local = [1]
+        answer, local_mapping = ChatService._compact_citations(answer, cited_local, "S")
+        answer, web_mapping = ChatService._compact_citations(answer, cited_web, "W")
         sources: list[dict[str, object]] = []
         for index in cited_local:
             result = local_results[index - 1]
-            source = result.source_dict(citation_index=index)
+            source = result.source_dict(citation_index=local_mapping[index])
             source["source_type"] = result.document_kind
             sources.append(source)
-        sources.extend(web_results[index - 1].source_dict() for index in cited_web)
+        for index in cited_web:
+            source = web_results[index - 1].source_dict()
+            source["citation_index"] = web_mapping[index]
+            sources.append(source)
         return answer, sources[: settings.context_top_k]
 
     @staticmethod
@@ -288,7 +332,18 @@ class ChatService:
             first = sources[0]
             cited.append((first.marker, first.citation_index))
             answer = f"{answer} [{first.marker}{first.citation_index}]".strip()
-        return answer, [available[key].source_dict() for key in cited][: settings.context_top_k]
+        citation_mappings: dict[str, dict[int, int]] = {}
+        for marker in {marker for marker, _index in cited}:
+            marker_indexes = [index for item_marker, index in cited if item_marker == marker]
+            answer, citation_mappings[marker] = ChatService._compact_citations(
+                answer, marker_indexes, marker
+            )
+        grounded_sources: list[dict[str, object]] = []
+        for marker, index in cited[: settings.context_top_k]:
+            source = available[(marker, index)].source_dict()
+            source["citation_index"] = citation_mappings[marker][index]
+            grounded_sources.append(source)
+        return answer, grounded_sources
 
     def complete(
         self,
@@ -307,7 +362,16 @@ class ChatService:
             actual_model = settings.llm_model
             retrieval_score: float | None = None
 
-            if qa_lookup.mode == "direct" and qa_lookup.match is not None:
+            qa_results = [source.result for source in qa_lookup.sources]
+            qa_is_usable = (
+                qa_lookup.mode in {"direct", "assist"}
+                and qa_lookup.match is not None
+                and self.evidence_is_sufficient(question, qa_results)
+            )
+            if qa_lookup.match is not None:
+                retrieval_score = qa_lookup.match.score
+
+            if qa_is_usable and qa_lookup.match is not None:
                 raw_answer = generator.complete_qa(
                     question, qa_lookup.match.answer, list(qa_lookup.sources)
                 )
@@ -315,23 +379,6 @@ class ChatService:
                     raise RuntimeError("LLM returned an empty QA-grounded answer")
                 answer, sources = self.grounded_qa_answer(raw_answer, qa_lookup.sources)
                 answer_origin = AnswerOrigin.KNOWLEDGE_BASE
-                retrieval_score = qa_lookup.match.score
-            elif qa_lookup.mode == "assist" and qa_lookup.match is not None:
-                qa_results = [source.result for source in qa_lookup.sources]
-                retrieval_score = qa_lookup.match.score
-                if self.evidence_is_sufficient(question, qa_results):
-                    raw_answer = generator.complete_qa(
-                        question, qa_lookup.match.answer, list(qa_lookup.sources)
-                    )
-                    if not raw_answer.strip():
-                        raise RuntimeError("LLM returned an empty QA-assisted answer")
-                    answer, sources = self.grounded_qa_answer(raw_answer, qa_lookup.sources)
-                    answer_origin = AnswerOrigin.KNOWLEDGE_BASE
-                else:
-                    answer, sources = self._complete_with_web(
-                        question, standalone, assistant.id, []
-                    )
-                    answer_origin = AnswerOrigin.WEB_SEARCH if sources else AnswerOrigin.NO_ANSWER
             else:
                 if qa_lookup.query_vector is None:
                     _standalone, retrieved = self.retrieve(question, history)
@@ -340,7 +387,8 @@ class ChatService:
                         question, history, query_vector=qa_lookup.query_vector
                     )
                 results = self.valid_local_context(retrieved)
-                retrieval_score = retrieved[0].score if retrieved else None
+                if retrieved:
+                    retrieval_score = retrieved[0].score
                 if results and self.evidence_is_sufficient(question, results):
                     raw_answer = generator.complete(question, results)
                     if not raw_answer.strip():
@@ -351,18 +399,7 @@ class ChatService:
                     answer, sources = self._complete_with_web(
                         question, standalone, assistant.id, results
                     )
-                    if sources:
-                        has_local = any(
-                            source.get("source_type") != "WEB_SEARCH" for source in sources
-                        )
-                        has_web = any(
-                            source.get("source_type") == "WEB_SEARCH" for source in sources
-                        )
-                        answer_origin = (
-                            AnswerOrigin.HYBRID
-                            if has_local and has_web
-                            else AnswerOrigin.WEB_SEARCH
-                        )
+                    answer_origin = self._answer_origin_for_sources(sources)
 
             if answer_origin == AnswerOrigin.NO_ANSWER:
                 sources = []
@@ -446,45 +483,42 @@ class ChatService:
             yield sse("status", {"phase": "qa_retrieval", "message": "正在优先匹配问答知识..."})
             qa_lookup = qa_knowledge_service.lookup(standalone)
 
-            if qa_lookup.mode == "direct" and qa_lookup.match is not None:
-                mode = "qa"
+            qa_results = [source.result for source in qa_lookup.sources]
+            qa_is_usable = (
+                qa_lookup.mode in {"direct", "assist"}
+                and qa_lookup.match is not None
+                and self.evidence_is_sufficient(question, qa_results)
+            )
+            if qa_lookup.match is not None:
                 retrieval_score = qa_lookup.match.score
-                answer_origin = AnswerOrigin.KNOWLEDGE_BASE
                 yield sse(
                     "status",
                     {"phase": "qa_sources", "message": "已命中相似问答，正在核验关联资料..."},
                 )
+
+            if qa_is_usable and qa_lookup.match is not None:
+                mode = "qa"
+                answer_origin = AnswerOrigin.KNOWLEDGE_BASE
                 for delta in generator.stream_qa(
                     question, qa_lookup.match.answer, list(qa_lookup.sources)
                 ):
                     full_answer += delta
                     yield sse("delta", {"text": delta})
-            elif qa_lookup.mode == "assist" and qa_lookup.match is not None:
-                retrieval_score = qa_lookup.match.score
-                qa_results = [source.result for source in qa_lookup.sources]
-                if self.evidence_is_sufficient(question, qa_results):
-                    mode = "qa"
-                    answer_origin = AnswerOrigin.KNOWLEDGE_BASE
-                    yield sse(
-                        "status",
-                        {"phase": "generation", "message": "正在利用相似问答及其原始资料..."},
-                    )
-                    for delta in generator.stream_qa(
-                        question, qa_lookup.match.answer, list(qa_lookup.sources)
-                    ):
-                        full_answer += delta
-                        yield sse("delta", {"text": delta})
-                else:
-                    mode = "web"
             else:
-                yield sse("status", {"phase": "retrieval", "message": "正在检索校园知识库..."})
+                retrieval_message = (
+                    "相似问答的关联资料不足，正在检索完整知识库..."
+                    if qa_lookup.match is not None
+                    else "正在检索校园知识库..."
+                )
+                yield sse("status", {"phase": "retrieval", "message": retrieval_message})
                 if qa_lookup.query_vector is None:
                     _standalone, retrieved = self.retrieve(question, history)
                 else:
                     _standalone, retrieved = self.retrieve(
                         question, history, query_vector=qa_lookup.query_vector
                     )
-                retrieval_score = retrieved[0].score if retrieved else None
+                if retrieved:
+                    retrieval_score = retrieved[0].score
                 local_results = self.valid_local_context(retrieved)
                 if local_results and self.evidence_is_sufficient(question, local_results):
                     mode = "local"
@@ -538,12 +572,14 @@ class ChatService:
                 local_results,
                 web_results,
             )
+            answer_origin = self._answer_origin_for_sources(sources)
             if cleaned.startswith(original_answer) and cleaned != original_answer:
                 yield sse("delta", {"text": cleaned[len(original_answer) :]})
             yield sse(
                 "sources",
                 {
                     "items": sources,
+                    "answer": cleaned,
                     "low_confidence": answer_origin == AnswerOrigin.NO_ANSWER,
                     "answer_origin": answer_origin.value,
                     "final": True,

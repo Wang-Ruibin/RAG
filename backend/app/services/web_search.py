@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import html
 import logging
 import re
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 import httpx
 
@@ -127,6 +129,12 @@ class WebSearchService:
             return WebSearchResult(success=False, error=f"联网搜索失败: {exc}")
 
     def _search_bing_html(self, query: str) -> WebSearchResult:
+        # Domains never useful for campus activity info
+        low_value_domains = {
+            "yz.chsi.com.cn", "baike.baidu.com", "huodongxing.com",
+            "eventwang.cn", "xiaoyuanyou.cn", "huodong.com",
+        }
+
         try:
             response = self._get_client().get(
                 "https://www.bing.com/search",
@@ -147,11 +155,13 @@ class WebSearchService:
             )
             response.raise_for_status()
 
+            text = html.unescape(response.text)
             items: list[WebSearchItem] = []
+            domain_count: dict[str, int] = {}
             blocks = re.findall(
-                r'<li class="b_algo"[^>]*>(.*?)</li>', response.text, re.DOTALL
+                r'<li class="b_algo"[^>]*>(.*?)</li>', text, re.DOTALL
             )
-            for block in blocks[: settings.web_search_max_results]:
+            for block in blocks:
                 link_match = re.search(
                     r'<h2[^>]*>.*?<a[^>]*href="(.*?)"[^>]*>(.*?)</a>',
                     block,
@@ -160,17 +170,33 @@ class WebSearchService:
                 snippet_match = re.search(
                     r'<p[^>]*>(.*?)</p>', block, re.DOTALL
                 )
-                if link_match:
-                    url = link_match.group(1)
-                    title = re.sub(r"<.*?>", "", link_match.group(2)).strip()
-                    snippet = ""
-                    if snippet_match:
-                        snippet = (
-                            re.sub(r"<.*?>", "", snippet_match.group(1)).strip()
-                        )
-                    items.append(
-                        WebSearchItem(title=title, url=url, snippet=snippet)
-                    )
+                if not link_match:
+                    continue
+
+                url = link_match.group(1)
+                domain = urlparse(url).hostname or ""
+                # Strip www. prefix for consistent matching
+                domain_key = domain.removeprefix("www.") if domain else ""
+
+                # Skip low-value domains
+                if domain_key in low_value_domains:
+                    continue
+                # Max 2 per domain
+                if domain_count.get(domain_key, 0) >= 2:
+                    continue
+
+                title = re.sub(r"<.*?>", "", link_match.group(2)).strip()
+                snippet = ""
+                if snippet_match:
+                    snippet = re.sub(r"<.*?>", "", snippet_match.group(1)).strip()
+
+                domain_count[domain_key] = domain_count.get(domain_key, 0) + 1
+                items.append(
+                    WebSearchItem(title=title, url=url, snippet=snippet)
+                )
+
+                if len(items) >= settings.web_search_max_results:
+                    break
 
             return WebSearchResult(
                 success=True,

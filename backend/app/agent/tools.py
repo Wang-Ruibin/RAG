@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 from app.agent.schemas import ToolDef, ToolResult
 
@@ -23,13 +25,13 @@ KNOWLEDGE_SEARCH_TOOL = ToolDef(
 
 WEB_SEARCH_TOOL = ToolDef(
     name="web_search",
-    description="搜索互联网获取最新的校园相关信息，如招生简章、新闻公告、活动通知等时效性内容",
+    description="搜索互联网获取最新的校园相关信息，如招生简章、新闻公告、活动通知等时效性内容。搜索技巧：① 包含具体时间词（如'2026年'、'2026年7月'）② 查校园通知可加 site:my.hhu.edu.cn 缩小范围 ③ 多角度换词搜索（活动→通知→公告→新闻）④ 避免使用过于宽泛的关键词",
     parameters={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "搜索关键词",
+                "description": "搜索关键词。建议：包含时间词（如2026年），特定校园通知可加 site: 限定域名，用具体词汇替代宽泛词",
             }
         },
         "required": ["query"],
@@ -89,8 +91,16 @@ def execute_web_search(query: str) -> ToolResult:
     """Execute web search via the configured search provider."""
     from app.services.web_search import web_search_service
 
+    # Extract site: filter if present (Bing often ignores it)
+    site_filter = None
+    clean_query = query
+    site_match = re.search(r'\bsite:([a-z0-9.-]+)', query)
+    if site_match:
+        site_filter = site_match.group(1).removeprefix("www.")
+        clean_query = re.sub(r'\s*site:[a-z0-9.-]+\s*', ' ', query).strip()
+
     try:
-        result = web_search_service.search_sync(query)
+        result = web_search_service.search_sync(clean_query or query)
     except Exception as exc:
         return ToolResult(
             tool_name="web_search",
@@ -110,6 +120,7 @@ def execute_web_search(query: str) -> ToolResult:
             "content": item.snippet,
         }
         for item in result.items
+        if not site_filter or site_filter in (urlparse(item.url).hostname or "")
     ]
     return ToolResult(
         tool_name="web_search",

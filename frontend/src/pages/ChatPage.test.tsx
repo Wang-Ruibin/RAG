@@ -172,4 +172,57 @@ describe('ChatPage', () => {
     expect(await screen.findByText('纠错待审核')).toBeVisible()
     expect(screen.getByRole('button', { name: '此答案准确，加入知识库' })).toBeDisabled()
   })
+
+  it('searches conversation titles and persists an inline rename', async () => {
+    let title = '校训查询'
+    vi.mocked(api).mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/api/conversations/1' && init?.method === 'PATCH') {
+        title = String(JSON.parse(String(init.body)).title)
+        return {
+          id: 1,
+          title,
+          message_count: 2,
+          created_at: '2026-07-17T00:00:00Z',
+          updated_at: '2026-07-18T00:00:00Z',
+        }
+      }
+      if (path === '/api/conversations?q=%E6%A0%A1%E8%AE%AD') {
+        return [{
+          id: 1,
+          title,
+          message_count: 2,
+          created_at: '2026-07-17T00:00:00Z',
+          updated_at: '2026-07-18T00:00:00Z',
+        }]
+      }
+      if (path === '/api/conversations') {
+        return [
+          { id: 1, title, message_count: 2, created_at: '2026-07-17T00:00:00Z' },
+          { id: 2, title: '宿舍信息', message_count: 4, created_at: '2026-07-17T00:00:00Z' },
+        ]
+      }
+      throw new Error(`Unexpected API path: ${path}`)
+    })
+
+    render(<ChatPage />)
+    expect(await screen.findByText('宿舍信息')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('搜索历史会话'), {
+      target: { value: '校训' },
+    })
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/api/conversations?q=%E6%A0%A1%E8%AE%AD'))
+    expect(screen.queryByText('宿舍信息')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '重命名会话：校训查询' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '编辑会话标题' }), {
+      target: { value: '河海大学校训' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存会话标题' }))
+
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/api/conversations/1', {
+      method: 'PATCH',
+      body: JSON.stringify({ title: '河海大学校训' }),
+    }))
+    expect(await screen.findByText('河海大学校训')).toBeInTheDocument()
+  })
 })

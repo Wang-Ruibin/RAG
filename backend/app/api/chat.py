@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
@@ -11,6 +13,7 @@ from app.models.schemas import (
     AnswerCorrectionSubmitRequest,
     AnswerKnowledgeTaskOut,
     ChatRequest,
+    ConversationRenameRequest,
 )
 from app.services.answer_corrections import answer_correction_service
 from app.services.answer_knowledge import answer_knowledge_service
@@ -165,14 +168,22 @@ def submit_answer_correction(
 
 
 @router.get("/conversations")
-def list_conversations(db: Database, user: CurrentUser) -> dict[str, object]:
-    rows = db.execute(
+def list_conversations(
+    db: Database,
+    user: CurrentUser,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+) -> dict[str, object]:
+    statement = (
         select(Conversation, func.count(Message.id))
         .outerjoin(Message, Message.conversation_id == Conversation.id)
         .where(Conversation.user_id == user.id)
         .group_by(Conversation.id)
         .order_by(Conversation.updated_at.desc())
-    ).all()
+    )
+    query = (q or "").strip()
+    if query:
+        statement = statement.where(Conversation.title.contains(query, autoescape=True))
+    rows = db.execute(statement).all()
     return success(
         [
             {
@@ -184,6 +195,35 @@ def list_conversations(db: Database, user: CurrentUser) -> dict[str, object]:
             }
             for conversation, count in rows
         ]
+    )
+
+
+@router.patch("/conversations/{conversation_id}")
+def rename_conversation(
+    conversation_id: int,
+    body: ConversationRenameRequest,
+    db: Database,
+    user: CurrentUser,
+) -> dict[str, object]:
+    conversation = db.scalar(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user.id,
+        )
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    conversation.title = body.title
+    db.commit()
+    db.refresh(conversation)
+    return success(
+        {
+            "id": conversation.id,
+            "title": conversation.title,
+            "created_at": conversation.created_at.isoformat(),
+            "updated_at": conversation.updated_at.isoformat(),
+        },
+        "会话已重命名",
     )
 
 

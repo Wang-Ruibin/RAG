@@ -21,6 +21,7 @@ from app.services.chat_scope import (
     OUT_OF_SCOPE_REFUSALS,
     is_hohai_related,
     refusal_for,
+    scope_hohai_query,
     social_response,
 )
 from app.services.qa_knowledge import QaLookup, QaResolvedSource, qa_knowledge_service
@@ -146,18 +147,19 @@ class ChatService:
     @staticmethod
     def _retrieval_query(question: str, history: list[dict[str, str]]) -> str:
         """Resolve only genuinely context-dependent follow-ups without an LLM call."""
-        if not history:
-            return question
-        normalized = question.strip().rstrip("，。？！!")
-        needs_context = any(marker in normalized for marker in CONTEXT_REFERENCE_MARKERS)
-        needs_context = needs_context or normalized in SHORT_CONTEXT_QUESTIONS
-        if not needs_context:
-            return question
-        previous_user = next(
-            (item["content"] for item in reversed(history) if item.get("role") == "user"),
-            "",
-        )
-        return f"{previous_user} {question}".strip() if previous_user else question
+        resolved = question
+        if history:
+            normalized = question.strip().rstrip("，。？！!")
+            needs_context = any(marker in normalized for marker in CONTEXT_REFERENCE_MARKERS)
+            needs_context = needs_context or normalized in SHORT_CONTEXT_QUESTIONS
+            if needs_context:
+                previous_user = next(
+                    (item["content"] for item in reversed(history) if item.get("role") == "user"),
+                    "",
+                )
+                if previous_user:
+                    resolved = f"{previous_user} {question}".strip()
+        return scope_hohai_query(resolved)
 
     @staticmethod
     def is_low_confidence(results: list[RetrievalResult]) -> bool:

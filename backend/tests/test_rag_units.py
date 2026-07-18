@@ -154,6 +154,11 @@ def test_retrieval_query_only_adds_history_for_context_dependent_followups() -> 
     assert chat_service._retrieval_query("做一下计算题", history) == "做一下计算题"
 
 
+def test_retrieval_query_scopes_implicit_campus_subject_without_overwriting_other_school() -> None:
+    assert chat_service._retrieval_query("校训", []) == "河海大学校训"
+    assert chat_service._retrieval_query("北京大学校训", []) == "北京大学校训"
+
+
 def test_citation_validation_removes_unknown_sources_and_deduplicates() -> None:
     cleaned, cited = validate_citations("事实一[S1]，错误来源[S9]，再次引用[S1]。", 2)
 

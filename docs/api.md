@@ -49,8 +49,9 @@ Swagger：服务启动后访问 `/docs`。除 SSE 外，所有 JSON 使用：
 | GET | `/api/admin/answer-corrections` | 管理员 | 按 `status_filter`、`page`、`size` 查询纠错 |
 | POST | `/api/admin/answer-corrections/{id}/approve` | 管理员 | 审核问题/答案及可选 READY 文档 ID，返回 202 |
 | POST | `/api/admin/answer-corrections/{id}/reject` | 管理员 | 记录并向用户展示拒绝原因 |
-| GET | `/api/conversations` | 登录 | 当前用户会话列表 |
+| GET | `/api/conversations` | 登录 | 当前用户会话列表；可用 `q` 按标题模糊搜索 |
 | GET | `/api/conversations/{id}` | 所有者 | 会话与消息 |
+| PATCH | `/api/conversations/{id}` | 所有者 | 将标题重命名为 1–200 字符的 `title` |
 | DELETE | `/api/conversations/{id}` | 所有者 | 删除会话和消息 |
 | GET | `/api/health` | 公开 | 数据库连通性、版本、模型和 FAISS 索引状态 |
 | GET | `/api/stats` | 登录 | 文档、chunk、用户和会话数 |

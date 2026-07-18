@@ -114,6 +114,19 @@ def is_hohai_related(question: str) -> bool:
     return any(marker in normalized for marker in CAMPUS_INTENT_MARKERS)
 
 
+def scope_hohai_query(question: str) -> str:
+    """Add the product's Hohai subject to implicit campus queries."""
+    query = question.strip()
+    normalized = query.lower()
+    if not query or any(marker in normalized for marker in HOHAI_MARKERS):
+        return query
+    if OTHER_UNIVERSITY_PATTERN.search(normalized):
+        return query
+    if any(marker in normalized for marker in CAMPUS_INTENT_MARKERS):
+        return f"河海大学{query}"
+    return query
+
+
 def refusal_for(question: str, *, out_of_scope: bool) -> str:
     variants = OUT_OF_SCOPE_REFUSALS if out_of_scope else NO_EVIDENCE_REFUSALS
     return _pick_variant(question, variants)

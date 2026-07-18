@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.security import create_access_token, hash_password
 from app.models.enums import MessageStatus, Role
-from app.models.orm import Message, User
+from app.models.orm import Conversation, Message, User
 from app.rag.generation import generator
 from app.rag.qa_index import QaMatch
 from app.rag.retrieval import RetrievalResult
@@ -82,6 +82,58 @@ async def test_admin_cannot_deactivate_self(client: AsyncClient) -> None:
 
     assert response.status_code == 400
     assert response.json()["message"] == "不能停用当前管理员"
+
+
+async def test_conversation_title_search_and_rename_enforce_ownership(client: AsyncClient) -> None:
+    first = await register(client, "conversation-owner@example.com")
+    second = await register(client, "conversation-other@example.com")
+    first_user_id = int(first["user"]["id"])
+    with SessionLocal() as db:
+        motto = Conversation(user_id=first_user_id, title="校训查询")
+        dormitory = Conversation(user_id=first_user_id, title="宿舍信息")
+        db.add_all([motto, dormitory])
+        db.commit()
+        db.refresh(motto)
+        motto_id = motto.id
+
+    first_header = auth_header(str(first["access_token"]))
+    renamed = await client.patch(
+        f"/api/conversations/{motto_id}",
+        headers=first_header,
+        json={"title": "  河海大学校训  "},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["data"]["title"] == "河海大学校训"
+
+    search = await client.get(
+        "/api/conversations",
+        headers=first_header,
+        params={"q": "校训"},
+    )
+    assert search.status_code == 200
+    assert [item["title"] for item in search.json()["data"]] == ["河海大学校训"]
+
+    literal_wildcard = await client.get(
+        "/api/conversations",
+        headers=first_header,
+        params={"q": "%_"},
+    )
+    assert literal_wildcard.status_code == 200
+    assert literal_wildcard.json()["data"] == []
+
+    forbidden = await client.patch(
+        f"/api/conversations/{motto_id}",
+        headers=auth_header(str(second["access_token"])),
+        json={"title": "越权修改"},
+    )
+    assert forbidden.status_code == 404
+
+    empty = await client.patch(
+        f"/api/conversations/{motto_id}",
+        headers=first_header,
+        json={"title": "   "},
+    )
+    assert empty.status_code == 422
 
 
 async def test_grounded_chat_persists_citations_and_enforces_ownership(

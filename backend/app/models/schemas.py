@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from .enums import (
     AnswerCorrectionStatus,
@@ -143,6 +143,18 @@ class AnswerCorrectionOut(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(min_length=2, max_length=1000)
     conversation_id: int | None = None
+
+
+class ConversationRenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("会话标题不能为空")
+        return title
 
 
 class ChatResult(BaseModel):

@@ -1,4 +1,4 @@
-import { CopyOutlined, DeleteOutlined, DislikeOutlined, LikeOutlined, PlusOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { CheckOutlined, CloseOutlined, CopyOutlined, DeleteOutlined, DislikeOutlined, EditOutlined, LikeOutlined, PlusOutlined, SearchOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, List, Popconfirm, Space, Spin, Tag, Tooltip, Typography, message } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
@@ -44,8 +44,17 @@ function updateLastMessage(
   return next
 }
 
+function conversationListPath(query: string) {
+  const normalized = query.trim()
+  return normalized ? `/api/conversations?q=${encodeURIComponent(normalized)}` : '/api/conversations'
+}
+
 export function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversationQuery, setConversationQuery] = useState('')
+  const [editingConversationId, setEditingConversationId] = useState<number | null>(null)
+  const [conversationTitleDraft, setConversationTitleDraft] = useState('')
+  const [renamingConversationId, setRenamingConversationId] = useState<number | null>(null)
   const [activeId, setActiveId] = useState<number | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -63,8 +72,23 @@ export function ChatPage() {
   const deletingConversationIds = useRef(new Set<number>())
   const pollingTaskIds = useRef(new Set<number>())
 
-  const loadConversations = () => api<Conversation[]>('/api/conversations').then(setConversations)
-  useEffect(() => { void loadConversations() }, [])
+  const loadConversations = (query = conversationQuery) => (
+    api<Conversation[]>(conversationListPath(query)).then(setConversations)
+  )
+  useEffect(() => {
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void api<Conversation[]>(conversationListPath(conversationQuery))
+        .then((items) => { if (!cancelled) setConversations(items) })
+        .catch((reason) => {
+          if (!cancelled) void message.error(reason instanceof Error ? reason.message : '搜索会话失败')
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [conversationQuery])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   async function openConversation(id: number) {
@@ -168,6 +192,39 @@ export function ChatPage() {
       void message.success('会话已删除')
     } finally {
       deletingConversationIds.current.delete(id)
+    }
+  }
+
+  function startConversationRename(item: Conversation) {
+    setEditingConversationId(item.id)
+    setConversationTitleDraft(item.title)
+  }
+
+  function cancelConversationRename() {
+    setEditingConversationId(null)
+    setConversationTitleDraft('')
+  }
+
+  async function renameConversation(id: number) {
+    const title = conversationTitleDraft.trim()
+    if (!title) {
+      void message.warning('会话标题不能为空')
+      return
+    }
+    if (renamingConversationId === id) return
+    setRenamingConversationId(id)
+    try {
+      await api<Pick<Conversation, 'id' | 'title' | 'created_at' | 'updated_at'>>(`/api/conversations/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title }),
+      })
+      cancelConversationRename()
+      await loadConversations()
+      void message.success('会话已重命名')
+    } catch (reason) {
+      void message.error(reason instanceof Error ? reason.message : '重命名失败')
+    } finally {
+      setRenamingConversationId(null)
     }
   }
 
@@ -291,6 +348,8 @@ export function ChatPage() {
   }
 
   function startNewConversation() {
+    setConversationQuery('')
+    cancelConversationRename()
     setActiveId(null)
     setMessages([])
     setStreamError('')
@@ -304,32 +363,98 @@ export function ChatPage() {
         <Button type="primary" icon={<PlusOutlined />} block onClick={startNewConversation}>
           新对话
         </Button>
+        <Input
+          className="conversation-search"
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="搜索历史会话"
+          value={conversationQuery}
+          onChange={(event) => {
+            setConversationQuery(event.target.value)
+            cancelConversationRename()
+          }}
+        />
         <List
           dataSource={conversations}
-          locale={{ emptyText: '还没有历史会话' }}
-          renderItem={(item) => (
-            <List.Item
-              className={activeId === item.id ? 'conversation active' : 'conversation'}
-              onClick={() => {
-                if (!deletingConversationIds.current.has(item.id)) void openConversation(item.id)
-              }}
-              actions={[
-                <Popconfirm
-                  key="delete"
-                  title="删除这个会话？"
-                  onConfirm={(event) => {
-                    event?.stopPropagation()
-                    return removeConversation(item.id)
-                  }}
-                  onCancel={(event) => event?.stopPropagation()}
-                >
-                  <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={(event) => event.stopPropagation()} />
-                </Popconfirm>,
-              ]}
-            >
-              <List.Item.Meta title={item.title} description={`${item.message_count} 条消息`} />
-            </List.Item>
-          )}
+          locale={{ emptyText: conversationQuery.trim() ? '没有匹配的历史会话' : '还没有历史会话' }}
+          renderItem={(item) => {
+            const isEditing = editingConversationId === item.id
+            return (
+              <List.Item
+                className={activeId === item.id ? 'conversation active' : 'conversation'}
+                onClick={() => {
+                  if (!isEditing && !deletingConversationIds.current.has(item.id)) void openConversation(item.id)
+                }}
+                actions={isEditing ? [
+                  <Tooltip title="保存" key="save">
+                    <Button
+                      aria-label="保存会话标题"
+                      type="text"
+                      size="small"
+                      loading={renamingConversationId === item.id}
+                      icon={<CheckOutlined />}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void renameConversation(item.id)
+                      }}
+                    />
+                  </Tooltip>,
+                  <Tooltip title="取消" key="cancel">
+                    <Button
+                      aria-label="取消重命名"
+                      type="text"
+                      size="small"
+                      icon={<CloseOutlined />}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        cancelConversationRename()
+                      }}
+                    />
+                  </Tooltip>,
+                ] : [
+                  <Tooltip title="重命名" key="rename">
+                    <Button
+                      aria-label={`重命名会话：${item.title}`}
+                      type="text"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        startConversationRename(item)
+                      }}
+                    />
+                  </Tooltip>,
+                  <Popconfirm
+                    key="delete"
+                    title="删除这个会话？"
+                    onConfirm={(event) => {
+                      event?.stopPropagation()
+                      return removeConversation(item.id)
+                    }}
+                    onCancel={(event) => event?.stopPropagation()}
+                  >
+                    <Button aria-label={`删除会话：${item.title}`} type="text" danger size="small" icon={<DeleteOutlined />} onClick={(event) => event.stopPropagation()} />
+                  </Popconfirm>,
+                ]}
+              >
+                <List.Item.Meta
+                  title={isEditing ? (
+                    <Input
+                      aria-label="编辑会话标题"
+                      autoFocus
+                      maxLength={200}
+                      size="small"
+                      value={conversationTitleDraft}
+                      onChange={(event) => setConversationTitleDraft(event.target.value)}
+                      onClick={(event) => event.stopPropagation()}
+                      onPressEnter={() => void renameConversation(item.id)}
+                    />
+                  ) : item.title}
+                  description={`${item.message_count} 条消息`}
+                />
+              </List.Item>
+            )
+          }}
         />
       </aside>
       <main className="chat-main">

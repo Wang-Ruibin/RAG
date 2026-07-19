@@ -70,6 +70,11 @@ export function deleteDocument(id: number): Promise<Envelope<null>> {
   return request.delete(`/knowledge/${id}`)
 }
 
+/** 预览文档内容 */
+export function previewDocument(id: number, offset = 0, limit = 20000): Promise<Envelope<{ content: string; offset: number; limit: number; total_chars: number; has_more: boolean; format: string }>> {
+  return request.get(`/knowledge/${id}/preview`, { params: { offset, limit } })
+}
+
 /** 重新索引文档 */
 export function reindexDocument(id: number): Promise<Envelope<ReindexDocumentResponse>> {
   return request.post(`/knowledge/${id}/reindex`)

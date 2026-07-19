@@ -1,6 +1,6 @@
 -- ============================================================
 -- CampusQA - 校园知识问答助手 数据库初始化
--- 执行方式: docker exec -i campus-mysql mysql -uroot -p123456 campus_qa < init.sql
+-- 执行方式: docker exec -i campus-mysql mysql -uroot -pyour-password campus_qa < init.sql
 -- ============================================================
 
 -- 创建数据库（如果还没创建）
@@ -136,13 +136,21 @@ CREATE TABLE sys_login_info (
 INSERT INTO sys_user (user_id, user_name, nick_name, password, status, remark) VALUES
 (1, 'admin', '超级管理员', '$2a$10$7JB720yubVSZvUI0rEqK/.VqGOZTH.ulu33dHOiBE8ByOhJIrdAu2', '1', '系统内置超级管理员');
 
+-- 访客账号（仅经 /auth/guest-login 免密进入；密码为随机串的 BCrypt，明文已丢弃，且 Java 侧禁止其密码登录）
+INSERT INTO sys_user (user_id, user_name, nick_name, password, status, remark) VALUES
+(2, 'guest', '访客用户', '$2a$10$BOvua01//uwR6Ox/5lAVnemqLEqHvcU.2kJPtCTBF8NQSeAxhjHqe', '1', '系统内置访客账号，免验证码免密码，仅限智能问答，停用即关闭访客通道');
+
 -- 角色
 INSERT INTO sys_role (role_id, role_name, role_key, role_sort, status, remark) VALUES
 (1, '超级管理员', 'admin', 1, '1', '系统内置角色，拥有所有权限'),
-(2, '普通用户', 'user', 2, '1', '普通用户角色');
+(2, '普通用户', 'user', 2, '1', '普通用户角色'),
+(3, '访客', 'guest', 3, '1', '访客角色，仅首页智能问答，问答不留痕');
 
 -- 管理员绑定角色
 INSERT INTO sys_user_role (user_id, role_id) VALUES (1, 1);
+
+-- 访客绑定角色
+INSERT INTO sys_user_role (user_id, role_id) VALUES (2, 3);
 
 -- 菜单数据
 INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, menu_type, perms, icon, visible, status) VALUES
@@ -153,6 +161,7 @@ INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component,
 -- 知识库子菜单
 (21, '文档管理',   2, 2, '/knowledge/document', 'knowledge/document/index', 'C', 'knowledge:document:list',   'document','1', '1'),
 (22, '纠错审核',   2, 3, '/knowledge/correction', 'knowledge/correction/index', 'C', 'knowledge:correction:review', 'EditPen', '1', '1'),
+(23, '问答管理',   2, 4, '/qa/manage', 'qa/manage/index', 'C', 'qa:manage:list', 'ChatLineSquare', '1', '1'),
 -- 系统管理子菜单
 (30, '用户管理',   3, 1, '/system/user', 'system/user/index',       'C', 'system:user:list',   'user',    '1', '1'),
 (31, '角色管理',   3, 2, '/system/role', 'system/role/index',       'C', 'system:role:list',   'Avatar',  '1', '1'),
@@ -189,6 +198,10 @@ SELECT 1, menu_id FROM sys_menu;
 -- 普通用户赋权（首页；文档管理为管理员专属，走 Python 侧 ADMIN 校验）
 INSERT INTO sys_role_menu (role_id, menu_id) VALUES
 (2, 1);
+
+-- 访客赋权（仅首页智能问答）
+INSERT INTO sys_role_menu (role_id, menu_id) VALUES
+(3, 1);
 
 -- Nacos 配置库（Nacos自身使用）
 CREATE DATABASE IF NOT EXISTS nacos_config DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

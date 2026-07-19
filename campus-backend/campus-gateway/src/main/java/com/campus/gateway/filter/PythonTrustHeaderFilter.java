@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -45,8 +46,24 @@ public class PythonTrustHeaderFilter implements GlobalFilter, Ordered {
             Object loginId = StpUtil.getLoginIdByToken(token);
             if (loginId == null) return chain.filter(exchange);
 
+            // 从 Sa-Token Session（Redis）直接读角色和权限，不依赖 StpInterface
+            String roleHeader = "";
+            String permHeader = "";
+            try {
+                List<String> roles = StpUtil.getSessionByLoginId(loginId)
+                        .get("roles", () -> Collections.emptyList());
+                roleHeader = String.join(",", roles);
+                List<String> perms = StpUtil.getSessionByLoginId(loginId)
+                        .get("permissions", () -> Collections.emptyList());
+                permHeader = String.join(",", perms);
+            } catch (Exception ignored) {
+                // Session 不可用时透传空
+            }
+
             ServerHttpRequest modified = exchange.getRequest().mutate()
                     .header("X-Login-Name", String.valueOf(loginId))
+                    .header("X-Login-Roles", roleHeader)
+                    .header("X-Login-Perms", permHeader)
                     .build();
 
             return chain.filter(exchange.mutate().request(modified).build());

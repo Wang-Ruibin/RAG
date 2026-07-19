@@ -10,7 +10,7 @@ spring:
     redis:
       host: localhost
       port: 6379
-      password: 123456
+      password: your-redis-password
   cloud:
     nacos:
       discovery:

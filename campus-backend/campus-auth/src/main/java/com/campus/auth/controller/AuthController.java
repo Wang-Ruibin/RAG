@@ -88,6 +88,16 @@ public class AuthController {
         return R.ok();
     }
 
+    /** 访客登录 — 免验证码免密码，仅获得只读问答权限（roles=[guest]） */
+    @PostMapping("/guest-login")
+    public R<Map<String, Object>> guestLogin() {
+        SaTokenInfo tokenInfo = loginService.guestLogin();
+        Map<String, Object> result = new HashMap<>();
+        result.put("token", tokenInfo.getTokenValue());
+        result.put("tokenName", tokenInfo.getTokenName());
+        return R.ok(result, "访客登录成功");
+    }
+
     /** 获取当前用户信息 */
     @GetMapping("/getInfo")
     public R<Map<String, Object>> getInfo() {

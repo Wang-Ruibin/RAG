@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "development-only-change-me"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 120
+    guest_login_name: str = "guest"  # 与 Java 侧固定访客账号一致；该登录名全链路保留为访客专用（问答不落库）
     initial_admin_email: str = "admin@campusqa.cn"
     initial_admin_name: str = "系统管理员"
     initial_admin_password: SecretStr = SecretStr("")

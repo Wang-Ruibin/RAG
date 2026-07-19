@@ -1,31 +1,55 @@
 <template>
-  <div class="chat-page">
-    <aside class="conversation-pane">
+  <div :class="['chat-page', { 'chat-page--guest': isGuest }]">
+    <aside v-if="!isGuest" class="conversation-pane">
       <div class="conversation-heading"><div><strong>历史会话</strong><span>{{ conversations.length }} 个会话</span></div><el-button type="primary" plain :icon="Plus" @click="startNewChat">新对话</el-button></div>
+      <div class="conversation-search"><el-input v-model="conversationQuery" clearable :prefix-icon="Search" placeholder="搜索历史会话" size="small" @clear="cancelConversationRename" /></div>
       <div class="conversation-list">
-        <EmptyState v-if="!conversations.length" title="暂无历史会话" description="开启新对话，探索校园知识吧"><template #icon><ChatDotRound /></template></EmptyState>
-        <button v-for="conversation in conversations" :key="conversation.id" :class="['conversation-item',{active:conversation.id===activeId}]" type="button" @click="openConversation(conversation.id)">
-          <span><strong>{{ conversation.title || '未命名会话' }}</strong><small>{{ formatTime(conversation.updated_at) }} · {{ conversation.message_count }} 条消息</small></span>
-          <el-popconfirm title="删除此会话？" @confirm="removeConversation(conversation.id)"><template #reference><el-button text :icon="Delete" aria-label="删除会话" @click.stop /></template></el-popconfirm>
+        <EmptyState v-if="!conversations.length" :title="conversationQuery.trim() ? '没有匹配的历史会话' : '暂无历史会话'" :description="conversationQuery.trim() ? '换个关键词试试' : '开启新对话，探索校园知识吧'"><template #icon><ChatDotRound /></template></EmptyState>
+        <button
+          v-for="conversation in conversations"
+          :key="conversation.id"
+          :class="['conversation-item', { active: conversation.id === activeId, editing: editingConversationId === conversation.id }]"
+          type="button"
+          @click="editingConversationId === conversation.id ? undefined : openConversation(conversation.id)"
+        >
+          <template v-if="editingConversationId === conversation.id">
+            <el-input
+              v-model="conversationTitleDraft"
+              size="small"
+              maxlength="200"
+              class="conversation-rename-input"
+              aria-label="编辑会话标题"
+              @click.stop
+              @keydown.enter="renameConversationAction(conversation.id)"
+              @keydown.escape="cancelConversationRename"
+            />
+            <el-button text size="small" :icon="Check" :loading="renamingConversationId === conversation.id" aria-label="保存会话标题" @click.stop="renameConversationAction(conversation.id)" />
+            <el-button text size="small" :icon="CloseBold" aria-label="取消重命名" @click.stop="cancelConversationRename" />
+          </template>
+          <template v-else>
+            <span><strong>{{ conversation.title || '未命名会话' }}</strong><small>{{ formatTime(conversation.updated_at) }} · {{ conversation.message_count }} 条消息</small></span>
+            <el-button text size="small" :icon="Edit" :aria-label="`重命名会话：${conversation.title}`" @click.stop="startConversationRename(conversation)" />
+            <el-popconfirm title="删除此会话？" @confirm="removeConversation(conversation.id)"><template #reference><el-button text :icon="Delete" aria-label="删除会话" @click.stop /></template></el-popconfirm>
+          </template>
         </button>
       </div>
-      <CampusPhoto class="conversation-art" src="/assets/jiangning-library.jpg" alt="河海大学江宁校区图书馆" caption="江宁校区图书馆" />
     </aside>
 
     <section class="chat-panel">
       <header class="chat-heading">
         <span class="chat-heading__icon"><el-icon><ChatDotRound /></el-icon></span>
         <div><h1>校园知识问答</h1><p>基于校园知识库与联网来源，为你提供可核验的答案</p></div>
+        <el-tag v-if="isGuest" class="guest-tag" type="info" effect="light" round>访客模式 · 单轮问答 · 内容不保存</el-tag>
       </header>
 
       <div ref="messageListRef" class="message-list" @scroll="handleMessageScroll">
         <div v-if="!messages.length" class="welcome-panel">
-          <div class="welcome-visual"><CampusPhoto class="welcome-art" src="/assets/jiangning-aerial.jpg" alt="河海大学江宁校区航拍图" /></div>
           <h2>你好，我是河海智问</h2>
           <p>我可以帮你解答校园学习、生活和办事相关问题</p>
           <div class="suggestions">
             <button v-for="question in suggestions" :key="question" type="button" @click="send(question)"><el-icon><Search /></el-icon>{{ question }}</button>
           </div>
+          <div class="welcome-visual"><CampusPhoto class="welcome-art" src="/assets/jiangning-aerial.jpg" alt="河海大学江宁校区航拍图" /></div>
         </div>
 
         <article v-for="message in messages" :key="message.client_id" :class="['message-row',message.role.toLowerCase()]">
@@ -66,12 +90,12 @@
               <el-tooltip content="复制此回答" placement="top">
                 <button class="action-btn" type="button" @click="copyAnswer(message.content)"><el-icon><DocumentCopy /></el-icon></button>
               </el-tooltip>
-              <el-tooltip content="此答案准确，加入知识库" placement="top">
+              <el-tooltip v-if="!isGuest" content="此答案准确，加入知识库" placement="top">
                 <button class="action-btn" type="button" :disabled="!canAddToKnowledge(message)" @click="likeMessage(message)">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" /></svg>
                 </button>
               </el-tooltip>
-              <el-tooltip content="此答案不准确，我来提供答案" placement="top">
+              <el-tooltip v-if="!isGuest" content="此答案不准确，我来提供答案" placement="top">
                 <button class="action-btn" type="button" :disabled="!canCorrect(message)" @click="startCorrection(message)">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" /></svg>
                 </button>
@@ -99,20 +123,20 @@
           <el-button v-if="sending" type="danger" :icon="CloseBold" @click="stopCurrentStream">停止</el-button>
           <el-button v-else type="primary" circle :icon="Promotion" :disabled="!input.trim()" aria-label="发送" @click="send(input)" />
         </div>
-        <p>回答可能存在偏差，重要信息请以学校正式通知为准</p>
+        <p>{{ isGuest ? '访客模式下问答不会被保存，注册登录可解锁多轮对话与历史记录' : '回答可能存在偏差，重要信息请以学校正式通知为准' }}</p>
       </footer>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { Bottom, ChatDotRound, CloseBold, Delete, Document, DocumentCopy, Plus, Promotion, Search, TopRight, WarningFilled } from '@element-plus/icons-vue'
+import { Bottom, ChatDotRound, Check, CloseBold, Delete, Document, DocumentCopy, Edit, Plus, Promotion, Search, TopRight, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { deleteConversation, getConversation, listConversations, createKnowledgeTask, getKnowledgeTask, submitCorrection } from '@/api/qa'
+import { deleteConversation, getConversation, listConversations, renameConversation, createKnowledgeTask, getKnowledgeTask, submitCorrection } from '@/api/qa'
 import { streamChat, type SSEEvent } from '@/utils/sse'
 import { useUserStore } from '@/stores/user'
 import type { ActiveChatStream, AnswerCorrection, AnswerKnowledgeTask, ChatMessage, Conversation, SourceRef } from '@/types'
@@ -120,6 +144,7 @@ import CampusPhoto from '@/components/CampusPhoto.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
 const userStore = useUserStore()
+const isGuest = computed(() => userStore.isGuest)
 const conversations = ref<Conversation[]>([])
 const activeId = ref<number | null>(null)
 const messages = ref<ChatMessage[]>([])
@@ -131,6 +156,11 @@ const activeStream = ref<ActiveChatStream | null>(null)
 const messageListRef = ref<HTMLElement>()
 const isNearBottom = ref(true)
 const showBackToBottom = ref(false)
+const conversationQuery = ref('')
+const editingConversationId = ref<number | null>(null)
+const conversationTitleDraft = ref('')
+const renamingConversationId = ref<number | null>(null)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const suggestions = ['河海大学有多少个学院？','研究生如何申请奖学金？','图书馆开放时间是几点？','校历在哪里查看？','计算机学院有哪些专业？']
 const userInitial = computed(() => (userStore.user?.nickName || userStore.user?.userName || '我').charAt(0))
@@ -174,8 +204,8 @@ async function scrollToBottom(force = false) {
 }
 function backToBottom() { scrollToBottom(true) }
 
-async function loadConversationList() {
-  try { conversations.value = (await listConversations()).data } catch { conversations.value = [] }
+async function loadConversationList(query?: string) {
+  try { conversations.value = (await listConversations(query || undefined)).data } catch { conversations.value = [] }
 }
 
 function stopCurrentStream() {
@@ -191,6 +221,8 @@ function stopCurrentStream() {
 function startNewChat() {
   stopCurrentStream()
   cancelCorrection()
+  cancelConversationRename()
+  conversationQuery.value = ''
   activeId.value = null
   messages.value = []
   streamError.value = ''
@@ -228,6 +260,43 @@ async function removeConversation(id: number) {
   } catch { /* interceptor reports error */ }
 }
 
+// ── 会话重命名 ──
+function startConversationRename(item: Conversation) {
+  editingConversationId.value = item.id
+  conversationTitleDraft.value = item.title
+}
+
+function cancelConversationRename() {
+  editingConversationId.value = null
+  conversationTitleDraft.value = ''
+}
+
+async function renameConversationAction(id: number) {
+  const title = conversationTitleDraft.value.trim()
+  if (!title) { ElMessage.warning('会话标题不能为空'); return }
+  if (renamingConversationId.value === id) return
+  renamingConversationId.value = id
+  try {
+    await renameConversation(id, title)
+    cancelConversationRename()
+    await loadConversationList(conversationQuery.value.trim() || undefined)
+    ElMessage.success('会话已重命名')
+  } catch {
+    ElMessage.error('重命名失败')
+  } finally {
+    renamingConversationId.value = null
+  }
+}
+
+// ── 搜索防抖 ──
+watch(conversationQuery, (value) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    cancelConversationRename()
+    loadConversationList(value.trim() || undefined)
+  }, 250)
+})
+
 function invalidateMismatchedStream(stream: ActiveChatStream) {
   if (activeStream.value?.requestId !== stream.requestId) return
   activeStream.value = null
@@ -241,6 +310,9 @@ function handleSseEvent(event: SSEEvent, eventRequestId: string) {
   const stream = activeStream.value
   if (!stream || eventRequestId !== stream.requestId || !findAssistant(stream)) return
   if (event.event === 'start') {
+    // 访客无痕：后端返回 conversation_id/message_id 均为 null，整体早退——
+    // 不回填 activeId（Number(null)===0 会伪造会话号导致第二问 404）、不记 message.id，保证恒单轮
+    if (isGuest.value) return
     const serverId = event.data.conversation_id as number | string
     if (stream.requestedConversationId != null && String(serverId) !== String(stream.requestedConversationId)) {
       invalidateMismatchedStream(stream)
@@ -281,7 +353,7 @@ function handleSseEvent(event: SSEEvent, eventRequestId: string) {
       model: typeof event.data.model === 'string' ? event.data.model : message.model,
       answer_origin: answerOrigin(event.data.answer_origin) ?? message.answer_origin,
     }))
-    loadConversationList()
+    if (!isGuest.value) loadConversationList()
   }
   if (event.event === 'error') {
     streamError.value = String(event.data.message || '回答生成失败')
@@ -295,7 +367,7 @@ async function send(value: string) {
   const requestId = createClientId('request')
   const userMessageId = createClientId('user')
   const assistantMessageId = createClientId('assistant')
-  const requestedConversationId = activeId.value
+  const requestedConversationId = isGuest.value ? null : activeId.value
   const controller = new AbortController()
   const stream: ActiveChatStream = { requestId, requestedConversationId, serverConversationId: null, controller, assistantMessageId }
   input.value = ''
@@ -449,7 +521,7 @@ function correctionTagType(status: AnswerCorrection['status']) {
   return ({ PENDING: 'info', PROCESSING: 'warning', APPROVED: 'success', REJECTED: 'danger', FAILED: 'danger' } as const)[status] || 'info'
 }
 
-onMounted(loadConversationList)
+onMounted(() => { if (!isGuest.value) loadConversationList() })
 onBeforeRouteLeave(() => stopCurrentStream())
 onBeforeUnmount(() => {
   stopCurrentStream()
@@ -460,23 +532,27 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .chat-page { display:grid; height:calc(100vh - 32px); min-height:620px; grid-template-columns:clamp(300px,22vw,360px) minmax(0,1fr); gap:16px; }
+.chat-page--guest { grid-template-columns:minmax(0,1fr); }
+.guest-tag { margin-left:auto; flex-shrink:0; }
 .conversation-pane,.chat-panel { position:relative; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); }
 .conversation-pane { display:flex; flex-direction:column; }
 .conversation-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:76px; padding:16px 16px 14px 20px; border-bottom:1px solid var(--border); }
 .conversation-heading>div{display:flex;flex-direction:column}.conversation-heading strong{color:var(--text);font-size:18px}.conversation-heading span{color:var(--text-muted);font-size:11px}
+.conversation-search{padding:0 14px 10px;border-bottom:1px solid var(--border)}
 .conversation-list { position:relative; z-index:2; flex:1; padding:10px; overflow:auto; }
 .conversation-list :deep(.empty-state){min-height:280px}.conversation-item { display:flex; align-items:center; width:100%; min-height:68px; margin-bottom:4px; padding:10px 8px 10px 12px; color:var(--text-secondary); text-align:left; background:transparent; border:0; border-radius:10px; cursor:pointer; }
 .conversation-item:hover,.conversation-item.active{background:var(--surface-hover)}.conversation-item.active{box-shadow:inset 3px 0 var(--brand)}
 .conversation-item>span{display:flex;min-width:0;flex:1;flex-direction:column}.conversation-item strong{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.conversation-item small{margin-top:5px;color:var(--text-muted);font-size:11px}.conversation-item.active strong{color:var(--brand)}
-.conversation-art { position:absolute; right:0; bottom:18px; width:100%; height:220px; }
-.conversation-art :deep(img){object-position:center 38%}
+.conversation-item.editing{cursor:default;background:var(--surface-hover)}.conversation-rename-input{flex:1;min-width:0}
+
+
 .chat-panel { display:flex; min-width:0; flex-direction:column; }
 .chat-heading { display:flex; align-items:center; gap:14px; min-height:76px; padding:14px 22px; border-bottom:1px solid var(--border); }
 .chat-heading__icon{display:grid;width:42px;height:42px;place-items:center;color:#fff;background:var(--brand);border-radius:12px;font-size:22px;box-shadow:var(--shadow-blue)}
 .chat-heading h1{margin:0;color:var(--text);font-size:20px}.chat-heading p{margin:4px 0 0;color:var(--text-muted);font-size:12px}
 .message-list { position:relative; flex:1; padding:26px clamp(18px,4vw,52px); overflow:auto; scroll-behavior:smooth; }
 .welcome-panel { display:flex; max-width:900px; min-height:100%; margin:auto; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
-.welcome-visual{position:relative;width:min(800px,94%);height:300px;margin-bottom:-10px}.welcome-art{position:absolute;inset:62px 0 0;width:100%;height:220px}.welcome-art :deep(img){object-position:center 46%;opacity:.18}.welcome-robot{position:absolute;top:0;left:50%;z-index:2;width:360px;transform:translateX(-50%)}.welcome-panel h2{margin:0 0 8px;color:var(--brand);font-size:32px}.welcome-panel>p{margin:0;color:var(--text-muted);font-size:16px}
+.welcome-visual{position:relative;width:min(800px,94%);height:220px;margin-top:30px}.welcome-art{position:absolute;inset:0;width:100%;height:100%}.welcome-art :deep(img){object-position:center 46%}.welcome-panel h2{margin:0 0 8px;color:var(--brand);font-size:32px}.welcome-panel>p{margin:0;color:var(--text-muted);font-size:16px}
 .suggestions { display:flex; max-width:820px; gap:10px; margin-top:28px; flex-wrap:wrap; justify-content:center; }.suggestions button{display:flex;align-items:center;gap:8px;padding:11px 15px;color:var(--brand);background:var(--surface);border:1px solid var(--border-strong);border-radius:999px;box-shadow:var(--shadow-sm);cursor:pointer}.suggestions button:hover{border-color:var(--brand);transform:translateY(-1px)}
 .message-row { display:flex; max-width:980px; gap:12px; margin:0 auto 24px; align-items:flex-start; }.message-row.user{justify-content:flex-end}.message-wrap{max-width:min(820px,calc(100% - 55px));}.message-row.user .message-wrap{max-width:min(680px,calc(100% - 55px))}.message-meta{display:flex;align-items:center;gap:10px;margin:0 3px 6px;color:var(--text-muted);font-size:11px}.message-row.user .message-meta{justify-content:flex-end}.message-meta span{color:var(--text-secondary);font-weight:700}
 .assistant-avatar,.user-avatar{flex:0 0 auto;color:#fff;background:var(--brand)}.assistant-avatar{background:linear-gradient(145deg,#5aa2f4,var(--brand))}.message-bubble{position:relative;padding:15px 18px;color:var(--text-secondary);background:var(--surface-soft);border:1px solid var(--border);border-radius:5px 16px 16px 16px}.message-row.user .message-bubble{color:#17365e;background:linear-gradient(135deg,#eaf4ff,#dfeeff);border-color:#cae0f8;border-radius:16px 5px 16px 16px}html.dark .message-row.user .message-bubble{color:var(--text);background:#173456;border-color:#29527d}
@@ -492,6 +568,6 @@ onBeforeUnmount(() => {
 .correction-editor .correction-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
 .back-bottom{position:absolute;right:28px;bottom:112px;z-index:4;display:flex;align-items:center;gap:5px;padding:8px 12px;color:var(--brand);background:var(--surface);border:1px solid var(--border);border-radius:999px;box-shadow:var(--shadow-md);cursor:pointer}.composer{position:relative;padding:14px 22px 12px;background:var(--surface);border-top:1px solid var(--border)}.composer-box{display:flex;align-items:flex-end;gap:10px;padding:8px 9px 8px 14px;border:1px solid var(--border-strong);border-radius:14px}.composer-box:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}.composer-box :deep(.el-textarea__inner){padding:7px 0;background:transparent;box-shadow:none!important;resize:none}.composer-box .el-button.is-circle{width:40px;height:40px;flex:0 0 auto}.composer>p{margin:7px 0 0;color:var(--text-light);font-size:10px;text-align:center}.stream-error{display:flex;align-items:center;gap:8px;margin-bottom:9px;padding:8px 10px;color:#c63d3d;background:rgba(239,68,68,.08);border-radius:8px;font-size:12px}.stream-error span{flex:1}
 @keyframes pulse{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}@keyframes blink{50%{opacity:0}}
-@media(max-width:1180px){.chat-page{grid-template-columns:280px minmax(0,1fr)}.message-list{padding:22px 16px}.suggestions button{font-size:12px}}
+@media(max-width:1180px){.chat-page{grid-template-columns:280px minmax(0,1fr)}.chat-page--guest{grid-template-columns:minmax(0,1fr)}.message-list{padding:22px 16px}.suggestions button{font-size:12px}}
 @media(max-width:720px){.chat-page{height:auto;min-height:calc(100vh - 118px);grid-template-columns:1fr}.conversation-pane{max-height:220px}.conversation-art{display:none}.chat-panel{min-height:650px}.welcome-panel h2{font-size:24px}}
 </style>

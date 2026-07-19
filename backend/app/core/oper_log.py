@@ -20,6 +20,7 @@ import time
 
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 
 logger = logging.getLogger("uvicorn.error")
@@ -28,13 +29,16 @@ _PARAM_MAX_CHARS = 2000
 _RESULT_MAX_CHARS = 2000
 _BODY_CAPTURE_LIMIT = 64 * 1024  # 超过 64KB 的请求体不进日志（如文件上传）
 
+# 提问路径单独成常量：访客无痕跳过与 _RULES 复用同一正则，避免双份漂移
+_CHAT_PATH = re.compile(r"^/api/chat(/stream)?$")
+
 # (请求方法, 路径正则, 模块标题, business_type: 0其它 1新增 2修改 3删除)
 _RULES: list[tuple[str, re.Pattern[str], str, int]] = [
     ("POST", re.compile(r"^/api/documents$"), "知识库-文档上传", 1),
     ("PATCH", re.compile(r"^/api/documents/\d+$"), "知识库-文档编辑", 2),
     ("DELETE", re.compile(r"^/api/documents/\d+$"), "知识库-文档删除", 3),
     ("POST", re.compile(r"^/api/documents/\d+/reindex$"), "知识库-重建索引", 2),
-    ("POST", re.compile(r"^/api/chat(/stream)?$"), "智能问答-提问", 0),
+    ("POST", _CHAT_PATH, "智能问答-提问", 0),
     ("DELETE", re.compile(r"^/api/conversations/\d+$"), "智能问答-删除会话", 3),
     ("POST", re.compile(r"^/api/messages/\d+/knowledge-task$"), "智能问答-答案沉淀", 1),
     ("POST", re.compile(r"^/api/messages/\d+/correction$"), "智能问答-提交纠错", 1),
@@ -108,6 +112,11 @@ class OperLogMiddleware:
             return
 
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+        # 访客提问彻底无痕：直接透传，不 tee 不落库（仅豁免提问，其余规则照记，保留越权探测痕迹）。
+        # 信任前提：/qa/** 必经网关，PythonTrustHeaderFilter 以覆盖语义注入 X-Login-Name，无法伪造。
+        if _CHAT_PATH.match(scope["path"]) and headers.get("x-login-name") == settings.guest_login_name:
+            await self.app(scope, receive, send)
+            return
         content_type = headers.get("content-type", "")
         try:
             content_length = int(headers.get("content-length") or 0)

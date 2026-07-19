@@ -14,7 +14,7 @@ from app.models.orm import Document
 from app.models.schemas import DocumentOut, DocumentPreviewOut, DocumentUpdateRequest
 from app.services.documents import DuplicateDocumentError, document_service
 
-from .dependencies import AdminUser, CurrentUser, Database
+from .dependencies import CurrentUser, Database
 
 router = APIRouter(prefix="/api/documents", tags=["知识库"])
 
@@ -26,7 +26,7 @@ def serialize(document: Document) -> dict[str, object]:
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     db: Database,
-    admin: AdminUser,
+    user: CurrentUser,
     file: Annotated[UploadFile, File()],
     title: Annotated[str, Form()] = "",
     category: Annotated[str, Form()] = "其他",
@@ -46,7 +46,7 @@ async def upload_document(
             mime_type=file.content_type or "application/octet-stream",
             title=title or Path(original_name).stem,
             category=category,
-            uploaded_by=admin.id,
+            uploaded_by=user.id,
         )
     except DuplicateDocumentError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -152,7 +152,7 @@ def update_document(
     document_id: int,
     payload: DocumentUpdateRequest,
     db: Database,
-    _admin: AdminUser,
+    _user: CurrentUser,
 ) -> dict[str, object]:
     document = db.get(Document, document_id)
     if document is None:
@@ -178,7 +178,7 @@ def update_document(
 
 
 @router.post("/{document_id}/reindex", status_code=status.HTTP_202_ACCEPTED)
-def reindex_document(document_id: int, db: Database, _admin: AdminUser) -> dict[str, object]:
+def reindex_document(document_id: int, db: Database, _user: CurrentUser) -> dict[str, object]:
     document = db.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="文档不存在")
@@ -189,7 +189,7 @@ def reindex_document(document_id: int, db: Database, _admin: AdminUser) -> dict[
 
 
 @router.delete("/{document_id}")
-def delete_document(document_id: int, db: Database, _admin: AdminUser) -> dict[str, object]:
+def delete_document(document_id: int, db: Database, _user: CurrentUser) -> dict[str, object]:
     document = db.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="文档不存在")

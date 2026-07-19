@@ -44,7 +44,9 @@
               </el-form-item>
               <div class="login-options"><el-checkbox v-model="rememberMe">记住我</el-checkbox><button type="button" @click="showForgotTip">忘记密码？</button></div>
               <el-button class="submit-button" type="primary" :loading="loading" @click="handleLogin">登录</el-button>
-              <el-button class="register-button" plain type="primary" @click="switchMode(true)">立即注册</el-button>
+              <button class="guest-entry" type="button" :disabled="loading" @click="handleGuestLogin">
+                <el-icon><User /></el-icon> 访客进入 · 免注册直接体验问答
+              </button>
             </el-form>
           </div>
 
@@ -138,6 +140,15 @@ async function handleLogin() {
   } catch { await refreshCaptcha() } finally { loading.value = false }
 }
 
+async function handleGuestLogin() {
+  loading.value = true
+  try {
+    await userStore.guestLogin()
+    ElMessage.success('已进入访客模式，问答不会被保存')
+    await router.push('/home')
+  } catch { /* 拦截器已提示（如"访客通道已关闭"） */ } finally { loading.value = false }
+}
+
 async function handleRegister() {
   if (!(await regRef.value?.validate().catch(() => false))) return
   loading.value = true
@@ -163,8 +174,8 @@ onMounted(refreshCaptcha)
 </script>
 
 <style scoped>
-.login-page{display:grid;min-height:100vh;grid-template-columns:minmax(0,60.5%) minmax(540px,39.5%);overflow-x:hidden;background:#f5f9ff}
-.login-brand{position:relative;min-height:100vh;overflow:hidden;background:linear-gradient(135deg,#f8fbff 0%,#eef6ff 55%,#e5f1ff 100%)}
+.login-page{display:grid;min-height:100vh;grid-template-columns:minmax(0,60.5%) minmax(540px,39.5%);align-items:start;overflow-x:hidden;background:#f5f9ff}
+.login-brand{position:sticky;top:0;min-height:100vh;overflow:hidden;background:linear-gradient(135deg,#f8fbff 0%,#eef6ff 55%,#e5f1ff 100%)}
 .brand-overlay{position:absolute;inset:0;z-index:1;background:radial-gradient(circle at 23% 22%,rgba(255,255,255,.95),transparent 32%),linear-gradient(115deg,rgba(247,251,255,.96),rgba(232,243,255,.72))}
 .brand-campus{position:absolute;z-index:2;right:-3%;bottom:9%;width:105%;height:58%;object-fit:cover;object-position:center 44%;opacity:.26;filter:grayscale(1) sepia(1) saturate(5.5) hue-rotate(174deg) brightness(1.28) contrast(.84);mix-blend-mode:multiply;mask-image:linear-gradient(180deg,transparent 0,#000 16%,#000 76%,transparent 100%)}
 .brand-water{position:absolute;z-index:3;right:-10%;bottom:-12%;width:125%;height:48%;background:repeating-radial-gradient(ellipse at 44% 100%,transparent 0 42px,rgba(69,133,213,.10) 44px 46px,transparent 48px 84px);opacity:.7}
@@ -193,7 +204,7 @@ onMounted(refreshCaptcha)
 .login-card :deep(.el-form-item){margin-bottom:25px}.login-card :deep(.el-form-item__label){height:auto;margin-bottom:9px;color:#1f2c3d;font-size:15px;font-weight:700}.login-card :deep(.el-input__wrapper){min-height:60px;padding:1px 19px;border-radius:8px}.login-card :deep(.el-input__inner){font-size:14px}.login-card :deep(.el-input__prefix){font-size:18px}
 .form-title{margin-bottom:20px}.form-title h2{margin:0;color:var(--text);font-size:22px}.form-title p{margin:6px 0 0;color:var(--text-muted);font-size:13px}.form-grid{display:grid;gap:0 14px;grid-template-columns:1fr 1fr}
 .captcha-row{display:flex;width:100%;align-items:center;gap:10px}.captcha-row>.el-input{min-width:0;flex:1}.captcha-button{width:132px;height:60px;flex:0 0 auto;padding:0;overflow:hidden;color:#174d8d;background:#fff;border:1px solid #dbe5f1;border-radius:8px;cursor:pointer}.captcha-button img{display:block;width:100%;height:100%;object-fit:contain}.captcha-button span{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:24px;letter-spacing:.18em}.captcha-refresh{display:grid;width:34px;height:60px;flex:0 0 auto;place-items:center;color:#73839a;background:transparent;border:0;cursor:pointer;font-size:23px}
-.login-options{display:flex;align-items:center;justify-content:space-between;margin:-2px 0 25px}.login-options button{color:#0765d7;background:transparent;border:0;cursor:pointer}.submit-button,.register-button{width:100%;height:60px;font-size:18px}.register-button{margin:16px 0 0}.login-footnote{margin:24px 0 0;color:#9aacc2;font-size:12px;text-align:center}
+.login-options{display:flex;align-items:center;justify-content:space-between;margin:-2px 0 25px}.login-options button{color:#0765d7;background:transparent;border:0;cursor:pointer}.submit-button{width:100%;height:60px;font-size:18px}.guest-entry{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin:14px auto 0;color:#7c889b;font-size:14px;background:none;border:0;cursor:pointer;transition:color .2s}.guest-entry:hover{color:#0765d7}.guest-entry:disabled{cursor:not-allowed;opacity:.5}.login-footnote{margin:24px 0 0;color:#9aacc2;font-size:12px;text-align:center}
 .form-fade-enter-active,.form-fade-leave-active{transition:opacity .18s ease,transform .18s ease}.form-fade-enter-from{opacity:0;transform:translateX(10px)}.form-fade-leave-to{opacity:0;transform:translateX(-10px)}
 :global(html.dark .login-panel){background:#0c1420}:global(html.dark .login-card){background:#121d2b;border-color:#26384e}:global(html.dark .brand-overlay){background:linear-gradient(120deg,rgba(10,24,42,.92),rgba(12,31,55,.88))}:global(html.dark .login-card .el-form-item__label){color:#edf4ff}
 @media(max-width:1440px){.university-wordmark img{width:86px;height:86px}.university-wordmark strong{font-size:34px}.university-wordmark span{font-size:12px}.platform-wordmark strong{font-size:39px}.platform-wordmark span{font-size:16px}.login-wordmark>i{height:74px;margin:0 24px}.brand-slogan{margin-left:60px}.brand-slogan p{font-size:22px}.brand-points article{min-height:102px;padding:18px}.brand-points .el-icon{font-size:36px}}

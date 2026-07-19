@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.enums import AnswerOrigin, MessageRole, MessageStatus
-from app.models.orm import Conversation, Message, User
+from app.models.orm import Conversation, Message, User, is_guest_user
 from app.rag.generation import generator, validate_citations
 from app.rag.retrieval import RetrievalResult, retrieval_service
 from app.services.chat_scope import (
@@ -83,6 +83,18 @@ class ChatService:
     def prepare(
         self, db: Session, user: User, question: str, conversation_id: int | None
     ) -> tuple[Conversation, Message, list[dict[str, str]]]:
+        if is_guest_user(user):
+            # 访客单轮无痕：不建会话、不写消息、无历史；conversation_id 一律忽略（防带他人会话号探询）。
+            # transient 对象（永不 db.add），刻意省略 user_id/conversation_id 让外键自然为 None。
+            conversation = Conversation(title=question[:40])
+            assistant = Message(
+                role=MessageRole.ASSISTANT,
+                content="",
+                status=MessageStatus.STREAMING,
+                model=settings.llm_model,
+            )
+            return conversation, assistant, []
+
         if conversation_id is not None:
             conversation = db.scalar(
                 select(Conversation).where(
@@ -353,6 +365,7 @@ class ChatService:
         conversation_id: int | None,
     ) -> dict[str, object]:
         started = time.perf_counter()
+        guest = is_guest_user(user)
         conversation, assistant, history = self.prepare(db, user, question, conversation_id)
         try:
             standalone = self._retrieval_query(question, history)
@@ -411,7 +424,8 @@ class ChatService:
             assistant.retrieval_score = retrieval_score
             assistant.answer_origin = answer_origin
             assistant.model = actual_model
-            db.commit()
+            if not guest:  # 访客无痕：transient 对象零脏写，跳过 commit 表达意图并防未来漂移
+                db.commit()
             return {
                 "conversation_id": conversation.id,
                 "message_id": assistant.id,
@@ -423,7 +437,8 @@ class ChatService:
             }
         except Exception:
             assistant.status = MessageStatus.ERROR
-            db.commit()
+            if not guest:
+                db.commit()
             raise
 
     def _complete_with_web(
@@ -721,6 +736,8 @@ class ChatService:
         answer_origin: AnswerOrigin | None = None,
         model: str | None = None,
     ) -> None:
+        if assistant_id is None:
+            return  # 访客消息未落库（transient，id 恒 None），无可回写
         with SessionLocal() as db:
             message = db.get(Message, assistant_id)
             if message is None:

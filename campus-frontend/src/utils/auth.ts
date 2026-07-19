@@ -32,3 +32,15 @@ export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(OLD_KEY)
 }
+
+/** 访客标志 —— 硬刷新时守卫同步执行，roles 尚未拉回，靠它兜底判定访客态 */
+const GUEST_KEY = 'campus-guest'
+
+export function getGuestFlag(): boolean {
+  return localStorage.getItem(GUEST_KEY) === '1'
+}
+
+export function setGuestFlag(on: boolean): void {
+  if (on) localStorage.setItem(GUEST_KEY, '1')
+  else localStorage.removeItem(GUEST_KEY)
+}

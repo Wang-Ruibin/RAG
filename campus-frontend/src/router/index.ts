@@ -38,6 +38,12 @@ const router = createRouter({
           meta: { title: '纠错审核', icon: 'EditPen' }
         },
         {
+          path: 'qa/manage',
+          name: 'QaManage',
+          component: () => import('@/views/qa/manage/index.vue'),
+          meta: { title: '问答管理', icon: 'ChatLineSquare' }
+        },
+        {
           path: 'system/user',
           name: 'SystemUser',
           component: () => import('@/views/system/user/index.vue'),
@@ -73,6 +79,9 @@ router.beforeEach((to, _from, next) => {
   if (to.path !== '/login' && !userStore.token) {
     next('/login')
   } else if (to.path === '/login' && userStore.token) {
+    next('/home')
+  } else if (userStore.isGuest && to.path !== '/home') {
+    // 访客只允许问答页（防直达 /system/*、/knowledge/*）
     next('/home')
   } else {
     next()

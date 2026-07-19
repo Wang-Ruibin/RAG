@@ -2,6 +2,7 @@ package com.campus.auth.service;
 
 import cn.dev33.satoken.stp.SaTokenInfo;
 import cn.dev33.satoken.stp.StpUtil;
+import cn.dev33.satoken.stp.parameter.SaLoginParameter;
 import com.campus.api.system.RemoteUserService;
 import com.campus.api.system.model.LoginUserVO;
 import com.campus.common.core.domain.R;
@@ -24,6 +25,9 @@ public class LoginService {
 
     private static final Logger log = LoggerFactory.getLogger(LoginService.class);
 
+    /** 内置访客账号用户名（与 init.sql 的 sys_user.guest、Python 侧 guest_login_name 保持一致） */
+    public static final String GUEST_USERNAME = "guest";
+
     private final RemoteUserService remoteUserService;
 
     public LoginService(RemoteUserService remoteUserService) {
@@ -34,6 +38,10 @@ public class LoginService {
      * 用户名+密码登录
      */
     public SaTokenInfo login(String username, String password) {
+        // 0. 访客账号的库内密码哈希不承载安全性（随机串），密码通道必须显式封死
+        if (GUEST_USERNAME.equals(username)) {
+            throw new ServiceException("该账号不支持密码登录");
+        }
         // 1. 通过 Feign 调用 System 服务查询用户
         R<LoginUserVO> result = remoteUserService.getUserByName(username);
 
@@ -67,6 +75,33 @@ public class LoginService {
         SaTokenInfo tokenInfo = StpUtil.getTokenInfo();
         log.info("用户登录成功: {}", username);
         return tokenInfo;
+    }
+
+    /**
+     * 访客登录 — 免验证码免密码。
+     * 运维开关：停用 sys_user.guest（status='0'）即可全局关闭访客通道。
+     */
+    public SaTokenInfo guestLogin() {
+        R<LoginUserVO> result = remoteUserService.getUserByName(GUEST_USERNAME);
+        if (result == null || !result.isSuccess() || result.getData() == null) {
+            throw new ServiceException("访客通道未初始化，请联系管理员");
+        }
+        LoginUserVO user = result.getData();
+        if (!"1".equals(user.getStatus())) {
+            throw new ServiceException("访客通道已关闭");
+        }
+        // isShare=false：每个访客独立 token，互不牵连（防 /auth/logout 连坐注销全体访客）
+        // maxLoginCount=-1：避免默认 12 个并发 token 上限把最早的访客"顶下线"
+        StpUtil.login(user.getUserName(), new SaLoginParameter()
+                .setIsConcurrent(true)
+                .setIsShare(false)
+                .setMaxLoginCount(-1));
+        // 共享的是 loginId=guest 的 Account-Session，内容恒等，重复写幂等
+        StpUtil.getSession().set("userInfo", user);
+        StpUtil.getSession().set("permissions", user.getPermissions());
+        StpUtil.getSession().set("roles", user.getRoles());
+        log.info("访客登录，签发独立 token");
+        return StpUtil.getTokenInfo();
     }
 
     /**

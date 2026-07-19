@@ -9,6 +9,11 @@ export function register(data: RegisterForm): Promise<R<void>> {
   return request.post('/auth/register', data)
 }
 
+/** 访客登录 —— 免验证码免密码，拿真 token（roles=[guest]），问答不落库 */
+export function guestLogin(): Promise<R<LoginResult>> {
+  return request.post('/auth/guest-login')
+}
+
 export function getCaptcha(): Promise<R<CaptchaResult>> {
   return request.get('/auth/captcha')
 }

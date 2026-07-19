@@ -6,7 +6,6 @@
 
     <FilterCard>
       <label class="filter-field"><span>用户名</span><el-input v-model="filters.userName" placeholder="请输入用户名" clearable style="width:230px" @keyup.enter="applyFilters" /></label>
-      <label class="filter-field"><span>昵称</span><el-input v-model="filters.nickName" placeholder="请输入昵称" clearable style="width:230px" @keyup.enter="applyFilters" /></label>
       <label class="filter-field"><span>手机号</span><el-input v-model="filters.phone" placeholder="请输入手机号" clearable style="width:230px" @keyup.enter="applyFilters" /></label>
       <el-button type="primary" :icon="Search" @click="applyFilters">搜索</el-button><el-button :icon="Refresh" @click="resetFilters">重置</el-button>
     </FilterCard>
@@ -42,9 +41,9 @@
 
     <el-dialog v-model="roleVisible" title="分配角色" width="520px">
       <div class="role-user"><el-avatar>{{ (roleTarget?.nickName || roleTarget?.userName || 'U').charAt(0) }}</el-avatar><div><strong>{{ roleTarget?.nickName || roleTarget?.userName }}</strong><span>{{ roleTarget?.userName }}</span></div></div>
-      <el-form label-position="top"><el-form-item label="选择角色" required><el-select v-model="selectedRoleIds" v-loading="roleLoading" multiple filterable placeholder="至少选择一个角色" style="width:100%"><el-option v-for="role in roles" :key="role.roleId" :label="role.roleName" :value="role.roleId"><span>{{ role.roleName }}</span><small class="role-key">{{ role.roleKey }}</small></el-option></el-select></el-form-item></el-form>
+      <el-form label-position="top"><el-form-item label="选择角色" required><el-select v-model="selectedRoleId" v-loading="roleLoading" filterable placeholder="请选择角色" style="width:100%"><el-option v-for="role in roles" :key="role.roleId" :label="role.roleName" :value="role.roleId"><span>{{ role.roleName }}</span><small class="role-key">{{ role.roleKey }}</small></el-option></el-select></el-form-item></el-form>
       <el-alert v-if="roleError" :title="roleError" type="error" :closable="false" show-icon />
-      <template #footer><el-button @click="roleVisible=false">取消</el-button><el-button type="primary" :loading="roleSubmitting" :disabled="roleLoading || selectedRoleIds.length===0" @click="submitRoles">保存角色</el-button></template>
+      <template #footer><el-button @click="roleVisible=false">取消</el-button><el-button type="primary" :loading="roleSubmitting" :disabled="roleLoading || selectedRoleId==null" @click="submitRoles">保存角色</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="passwordVisible" title="重置密码" width="420px"><el-form label-position="top"><el-form-item label="新密码"><el-input v-model="newPassword" type="password" show-password /></el-form-item></el-form><template #footer><el-button @click="passwordVisible=false">取消</el-button><el-button type="primary" :disabled="!newPassword" @click="submitPassword">确认重置</el-button></template></el-dialog>
@@ -77,12 +76,11 @@ function openEditor(row?:SysUser){editingId.value=row?.userId??null;Object.assig
 async function submitEditor(){if(!(await editorRef.value?.validate().catch(()=>false)))return;submitting.value=true;try{if(editingId.value){await updateUser({userId:editingId.value,userName:editor.userName,nickName:editor.nickName,email:editor.email,phone:editor.phone,status:editor.status})}else{await addUser({userName:editor.userName,nickName:editor.nickName,email:editor.email,phone:editor.phone,status:editor.status,password:editor.password})}ElMessage.success(editingId.value?'用户信息已更新':'用户已创建');editorVisible.value=false;await loadData()}finally{submitting.value=false}}
 async function handleDelete(row:SysUser){await deleteUsers([row.userId]);ElMessage.success('用户已删除');await loadData()}
 
-const roles=ref<SysRole[]>([]),roleVisible=ref(false),roleLoading=ref(false),roleSubmitting=ref(false),roleTarget=ref<SysUser|null>(null),selectedRoleIds=ref<number[]>([]),roleError=ref('')
-const roleCache=new Map<number,number[]>()
+const roles=ref<SysRole[]>([]),roleVisible=ref(false),roleLoading=ref(false),roleSubmitting=ref(false),roleTarget=ref<SysUser|null>(null),selectedRoleId=ref<number|null>(null),roleError=ref('')
 async function loadRoleOptions(){if(roles.value.length)return;const response=await listRole({pageNum:1,pageSize:100});roles.value=response.data.rows}
-async function loadSelectedRoles(userId:number){const cached=roleCache.get(userId);if(cached){selectedRoleIds.value=[...cached];return};const response=await getUserRoles(userId);selectedRoleIds.value=[...response.data];roleCache.set(userId,[...response.data])}
-async function openRoleDialog(row:SysUser){roleTarget.value=row;selectedRoleIds.value=[];roleError.value='';roleVisible.value=true;roleLoading.value=true;const [optionsResult,selectedResult]=await Promise.allSettled([loadRoleOptions(),loadSelectedRoles(row.userId)]);const errors=[];if(optionsResult.status==='rejected')errors.push('角色选项');if(selectedResult.status==='rejected')errors.push('当前角色');if(errors.length)roleError.value=`${errors.join('和')}加载失败，请稍后重试`;roleLoading.value=false}
-async function submitRoles(){if(!roleTarget.value||selectedRoleIds.value.length===0)return;roleSubmitting.value=true;const userId=roleTarget.value.userId;try{await assignUserRoles({userId,roleIds:[...selectedRoleIds.value]});roleCache.delete(userId);roleVisible.value=false;ElMessage.success('角色分配已更新');await loadData()}finally{roleSubmitting.value=false}}
+async function loadSelectedRole(userId:number){const response=await getUserRoles(userId);const ids=response.data as number[];selectedRoleId.value=ids.length>0?ids[0]:null}
+async function openRoleDialog(row:SysUser){roleTarget.value=row;selectedRoleId.value=null;roleError.value='';roleVisible.value=true;roleLoading.value=true;const [optionsResult,selectedResult]=await Promise.allSettled([loadRoleOptions(),loadSelectedRole(row.userId)]);const errors=[];if(optionsResult.status==='rejected')errors.push('角色选项');if(selectedResult.status==='rejected')errors.push('当前角色');if(errors.length)roleError.value=`${errors.join('和')}加载失败，请稍后重试`;roleLoading.value=false}
+async function submitRoles(){if(!roleTarget.value||selectedRoleId.value==null)return;roleSubmitting.value=true;const userId=roleTarget.value.userId;try{await assignUserRoles({userId,roleIds:[selectedRoleId.value]});roleVisible.value=false;ElMessage.success('角色分配已更新');await loadData()}finally{roleSubmitting.value=false}}
 
 const passwordVisible=ref(false),passwordUserId=ref(0),newPassword=ref('')
 function openPassword(row:SysUser){passwordUserId.value=row.userId;newPassword.value='';passwordVisible.value=true}

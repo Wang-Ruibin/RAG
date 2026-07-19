@@ -88,6 +88,20 @@ export interface Conversation {
   messages?: ChatMessage[]
 }
 
+// 管理员问答管理列表项
+export interface QaConversationItem {
+  conversation_id: number
+  conversation_title: string
+  question: string
+  answer: string
+  sources: SourceRef[]
+  user_id: number
+  user_name: string
+  answer_origin: 'KNOWLEDGE_BASE' | 'WEB_SEARCH' | 'HYBRID' | 'NO_ANSWER' | null
+  status: 'STREAMING' | 'COMPLETE' | 'CANCELLED' | 'ERROR' | null
+  created_at: string
+}
+
 // 聊天消息
 export interface ChatMessage {
   id?: number
@@ -180,6 +194,16 @@ export interface CampusDocument {
   uploaded_by?: number
   created_at: string
   updated_at: string
+}
+
+// 文档预览（Python 后端）
+export interface DocumentPreview {
+  content: string
+  offset: number
+  limit: number
+  total_chars: number
+  has_more: boolean
+  format: string
 }
 
 // Python 统一响应信封

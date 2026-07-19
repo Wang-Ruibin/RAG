@@ -292,3 +292,12 @@ class CorrectionSourceLink(Base):
         ForeignKey("documents.id", ondelete="CASCADE"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+def is_guest_user(user: User) -> bool:
+    """访客 = guest-login 注入的内存 User：从不落库，id 恒为 None（全系统唯一判定依据）。
+
+    刻意不用显式 flag：若未来有代码漏判访客而把 user.id 写进外键，
+    会立即触发 IntegrityError 响亮失败，而不是把访客数据静默落库。
+    """
+    return user.id is None

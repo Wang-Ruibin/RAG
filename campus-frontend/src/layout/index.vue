@@ -10,7 +10,7 @@
       </el-menu>
 
       <CampusPhoto
-        v-if="!appStore.sidebarCollapsed && route.path !== '/home'"
+        v-if="!appStore.sidebarCollapsed"
         class="sidebar-art"
         :src="sidebarCampus.src"
         :alt="sidebarCampus.alt"
@@ -134,7 +134,7 @@ async function handleCommand(command: string) {
 <style scoped>
 .app-layout { height:100vh; background:var(--page); overflow:hidden; }
 .app-sidebar { position:relative; display:flex; flex-direction:column; overflow:hidden; background:var(--sidebar); border-right:1px solid var(--border); transition:width .25s ease; }
-.brand-block { display:flex; min-height:148px; flex-direction:column; align-items:flex-start; justify-content:center; gap:10px; padding:18px 22px 16px; border-bottom:1px solid var(--border); }
+.brand-block { display:flex; min-height:112px; flex-direction:column; align-items:flex-start; justify-content:center; gap:10px; padding:12px 16px 10px; border-bottom:1px solid var(--border); }
 .brand-platform{display:flex;flex-direction:column;padding-left:70px}.brand-platform strong{color:var(--brand);font-size:20px;line-height:1.15;letter-spacing:.08em}.brand-platform span{margin-top:4px;color:var(--text-muted);font-size:10px;white-space:nowrap}
 .nav-menu { flex:1; padding:16px 12px; overflow:auto; border:0; background:transparent; }
 .nav-menu:not(.el-menu--collapse) { width:100%; }

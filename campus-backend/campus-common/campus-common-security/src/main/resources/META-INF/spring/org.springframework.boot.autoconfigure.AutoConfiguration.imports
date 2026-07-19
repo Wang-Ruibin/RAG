@@ -1,0 +1,3 @@
+com.campus.common.security.config.SaTokenConfig
+com.campus.common.security.handler.SaTokenExceptionHandler
+com.campus.common.security.config.SaTokenWebMvcConfig

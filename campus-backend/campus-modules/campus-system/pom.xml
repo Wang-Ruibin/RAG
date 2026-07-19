@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.campus</groupId>
+        <artifactId>campus-backend</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>campus-system</artifactId>
+    <name>Campus System</name>
+    <description>系统管理服务：用户管理、角色管理、菜单管理、操作日志</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.campus</groupId>
+            <artifactId>campus-common-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.campus</groupId>
+            <artifactId>campus-common-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-spring-boot3-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.campus</groupId>
+            <artifactId>campus-common-datasource</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.campus</groupId>
+            <artifactId>campus-common-log</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.campus</groupId>
+            <artifactId>campus-common-excel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.campus</groupId>
+            <artifactId>campus-common-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.campus</groupId>
+            <artifactId>campus-common-swagger</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.campus</groupId>
+            <artifactId>campus-api-system</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

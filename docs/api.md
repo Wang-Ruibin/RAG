@@ -107,9 +107,10 @@ Swagger：服务启动后访问 `/docs`。除 SSE 外，所有 JSON 使用：
 `KNOWLEDGE_BASE | WEB_SEARCH | HYBRID | NO_ANSWER`。满意回答入库任务状态为
 `QUEUED | PROCESSING | COMPLETE | FAILED`；相同助手消息重复提交会返回同一任务，不会
 重复生成知识条目。任务完成后返回 `qa_entry_id`；QA 是隐藏检索层，不会作为来源卡片。
-知识库来源只关联原 `document_id`，网页来源分别归档并按 URL/内容去重。强 QA 命中会跳过
-全库检索和再次联网，加载其关联原文后由当前模型重新生成；引用只指向本地原知识文档或
-网页归档 `[Sx]`，不会直接回放历史 QA 答案。
+知识库来源只关联原 `document_id`，网页来源分别归档并按 URL/内容去重。QA 命中后会先
+检查其关联原文能否完整回答；只有证据充分时才跳过完整 RAG 和联网，由当前模型重新生成。
+证据不足时先执行完整 RAG，仍不足再按河海大学范围策略联网或拒答。引用只指向本地原
+知识文档、网页归档 `[Sx]` 或当次网页 `[Wx]`，不会把隐藏 QA 作为来源。
 
 ## SSE 事件
 
@@ -126,16 +127,17 @@ event: delta
 data: {"text":"报名时间为"}
 
 event: sources
-data: {"items":[...],"low_confidence":false,"answer_origin":"KNOWLEDGE_BASE","final":true}
+data: {"items":[...],"answer":"最终清洗后的完整回答 [S1]","low_confidence":false,"answer_origin":"KNOWLEDGE_BASE","final":true}
 
 event: done
 data: {"latency_ms":1234,"model":"deepseek-v4-flash","answer_origin":"KNOWLEDGE_BASE"}
 ```
 
-正常回答只发送一次最终 `sources` 事件，位于文本增量之后、`done` 之前，避免把生成前的
-Top-K 弱相关候选误展示为引用来源。本地证据不足后先做河海大学范围判断：相关问题才会
-发送 `web_search` 状态并调用免费多引擎或可选百度搜索；无关问题不发送该状态、不访问
-网页，直接返回多样化礼貌说明。搜索未启用、失败或无结果时拒答且 `items` 为空。
+正常回答只发送一次最终 `sources` 事件，位于文本增量之后、`done` 之前；其中 `answer`
+用于覆盖流式阶段尚未清理或仍含稀疏编号的正文。后端只保留实际引用来源，并分别将 S/W
+编号连续化，例如只引用原 W1、W2、W5 时最终返回 W1、W2、W3。QA 关联证据不足时先发送
+完整知识库检索状态；完整 RAG 仍不足且问题与河海大学相关时才发送 `web_search`，无关
+问题不访问网页。搜索未启用、失败或无结果时拒答且 `items` 为空。
 
 打开空白问答页时的欢迎语是前端展示状态，不创建会话或消息；只有用户首次真正提问时才
 创建会话。用户发送“你好”“谢谢”“再见”等简短社交消息时，服务端本地响应，

@@ -8,6 +8,7 @@ from app.rag.generation import validate_citations
 from app.rag.parser import ParsedDocument, ParsedSection, parse_file
 from app.rag.retrieval import RetrievalResult, RetrievalService, lexical_coverage
 from app.services.chat import chat_service
+from app.services.web_search import WebSearchResult
 
 
 def test_markdown_parser_extracts_metadata_and_removes_navigation(tmp_path) -> None:
@@ -140,6 +141,31 @@ def test_grounded_answer_exposes_only_cited_context_sources() -> None:
     assert answer == "答案 [S1]"
     assert cited == [1]
     assert [source["citation_index"] for source in sources] == [1]
+
+
+def test_grounded_web_answer_compacts_sparse_citations() -> None:
+    results = [
+        WebSearchResult(
+            title=f"网页{index}",
+            url=f"https://example.com/{index}",
+            snippet=f"摘要{index}",
+            content=f"正文{index}",
+            site_name="示例站点",
+            domain="example.com",
+            published_at=None,
+            citation_index=index,
+        )
+        for index in range(1, 6)
+    ]
+
+    answer, sources, cited = chat_service.grounded_web_answer(
+        "第一项 [W1]，第二项 [W2]，最后一项 [W5]。", results
+    )
+
+    assert answer == "第一项 [W1]，第二项 [W2]，最后一项 [W3]。"
+    assert cited == [1, 2, 3]
+    assert [source["title"] for source in sources] == ["网页1", "网页2", "网页5"]
+    assert [source["citation_index"] for source in sources] == [1, 2, 3]
 
 
 def test_retrieval_query_only_adds_history_for_context_dependent_followups() -> None:

@@ -66,6 +66,7 @@ models/
 *.bin
 *.gguf
 *.safetensors
+/models/
 ollama_data/
 .cache/
 huggingface/
